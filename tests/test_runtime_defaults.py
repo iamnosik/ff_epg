@@ -102,6 +102,11 @@ class RuntimeFlowTests(unittest.TestCase):
             )
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
+        # 실제 시스템 시각과 무관하도록 고정된 EPG 시험 시각을 사용한다.
+        from datetime import datetime, timedelta, timezone
+        builder = module.build_epg
+        fixed_now = datetime(2026, 10, 14, 10, 0, tzinfo=timezone(timedelta(hours=9)))
+        module.build_epg = lambda *args, **kwargs: builder(*args, now=fixed_now, **kwargs)
         self.module = module
 
     def _fetch(self, url):
@@ -154,6 +159,31 @@ class RuntimeFlowTests(unittest.TestCase):
             self.module._generate()
         self.assertEqual(DummySetting.values["main_m3u_url"], "")
         self.assertFalse((Path(self.tmp.name) / "epgcustom" / "epgall.xml").exists())
+
+    def test_status_api_separates_current_failure_from_last_good_report(self):
+        import json
+        report_dir = Path(self.tmp.name) / "epgcustom"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "report.json").write_text(
+            json.dumps({"편성표연결": 49}, ensure_ascii=False), encoding="utf-8")
+        DummySetting.values.update({
+            "main_status": "실패",
+            "main_last_error": "ValueError",
+            "main_last_run": "2026-10-14 10:00",
+        })
+        reply = self.module.ModuleMain(self.fake_p).process_api("status", None)
+        self.assertEqual(reply["상태"], "실패")
+        self.assertEqual(reply["마지막오류"], "ValueError")
+        self.assertEqual(reply["생성보고서"]["편성표연결"], 49)
+
+    def test_failure_does_not_expose_private_url(self):
+        self.module._generate = lambda: (_ for _ in ()).throw(
+            ValueError("https://example.test/path?apikey=FAKE_SECRET")
+        )
+        self.module._run_safe()
+        self.assertEqual(DummySetting.values["main_status"], "실패")
+        self.assertEqual(DummySetting.values["main_last_error"], "ValueError")
+        self.assertNotIn("FAKE_SECRET", repr(DummySetting.values))
 
 
 if __name__ == "__main__":

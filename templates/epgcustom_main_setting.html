@@ -1,24 +1,45 @@
 {% extends "base.html" %}
 {% block content %}
-{{ macros.m_button_group([['globalSettingSaveBtn', '설정 저장'], ['make_epg_btn', 'EPG 생성']]) }}
-{{ macros.m_hr() }}
-<form id="setting" name="setting">
-  {{ macros.setting_input_text('main_m3u_url', '채널 목록(M3U)', value=arg['main_m3u_url'], desc=['기본값은 FF ALive에서 현재 선택한 채널 목록입니다. ff:// 주소는 자동 연결을 뜻하며 API 키를 입력할 필요가 없습니다.', 'Shyni 독립 Proxy의 hybrid M3U와 채널 구성이 다를 경우, Synology에서 접근 가능한 Shyni M3U 주소로 교체해야 정확히 일치합니다.']) }}
-  {{ macros.setting_input_textarea('main_epg_urls', '편성표 XMLTV 주소', value=arg['main_epg_urls'], desc=['기본값: FF MyEPG 우선 → 기존 FF EPG 보완. 각 줄의 ff:// 주소는 FF에서 인증을 자동 적용합니다.', '사용자 지정 HTTP(S) 주소도 가능하며, 저장한 기존 값은 자동으로 변경하지 않습니다.']) }}
-  {{ macros.setting_input_textarea('main_aliases_json', '채널명 별칭(JSON)', value=arg['main_aliases_json'], desc=['예시: {"EBS 1": ["EBS1"]}', '정확하게 확인된 동일 채널만 별칭으로 등록합니다.']) }}
-  <div class="alert alert-info" role="note">기본 공급원 주소는 FF 내부 자동 연결값입니다. 설정 저장 전에 API 키를 따로 찾을 필요가 없습니다.<br />최초 시험은 스케줄러를 끈 상태에서 <strong>설정 저장 → EPG 생성</strong> 순서로 진행해 주세요. 생성 결과는 아래 <strong>EPG 연결률 보고서</strong>에서 확인할 수 있습니다.</div>
-  {{ macros.m_hr() }}
-  {{ macros.global_setting_scheduler_button(arg['is_include'], arg['is_running']) }}
-  {{ macros.setting_input_text('main_interval', '자동 갱신 주기', value=arg['main_interval'], desc=['Cron 예시: 0 */6 * * * (6시간마다)']) }}
-  {{ macros.setting_checkbox('main_auto_start', '시작 시 자동 스케줄 등록', value=arg['main_auto_start']) }}
-  {{ macros.m_hr() }}
-  {{ macros.info_text_go('epgall', '통합 EPG XMLTV 주소', value=arg['api_epgall']) }}
-  {{ macros.info_text_go('status', 'EPG 연결률 보고서', value=arg['api_status']) }}
-  <div class="alert alert-info" role="status">
-    <strong>최근 실행 상태:</strong> {{ arg['main_status'] }} / {{ arg['main_last_run'] }}
-    {{ arg['main_last_summary'] }}
+<div class="container-fluid" style="max-width:1100px;margin:auto;">
+  <div class="row my-3">
+    <div class="col">
+      <h4 style="margin:15px 0;">EPGCustom <small style="font-size:.6em;opacity:.7">통합 편성표 관리</small></h4>
+      {{ macros.m_button_group([['make_epg_btn', '통합 EPG 지금 생성'], ['globalSettingSaveBtn', '설정 저장']]) }}
+    </div>
   </div>
-</form>
+  <div class="card mb-3" style="background:#252525;color:#eee;padding:18px;">
+    <h5>통합 EPG 주소</h5>
+    {{ macros.info_text_go('epgall', 'EPGALL (Shyni 연결용)', value=arg['api_epgall']) }}
+    <p style="font-size:.9em;opacity:.8">이 주소는 EPG 생성에 성공한 다음 사용합니다. 기존 Shyni EPG 주소는 검증 완료 전까지 변경하지 마세요.</p>
+    <hr style="border-color:#444;" />
+    <div><strong>생성 상태:</strong> {{ arg['main_status'] or '미실행' }}</div>
+    <div><strong>최근 생성:</strong> {{ arg['main_last_run'] or '아직 생성하지 않음' }}</div>
+    <div><strong>연결 현황:</strong> {{ arg['main_last_summary'] or 'EPG를 생성하면 표시됩니다.' }}</div>
+    {% if arg.get('main_last_error') %}<div role="alert"><strong>최근 실패 원인:</strong> {{ arg['main_last_error'] }}</div>{% endif %}
+    {{ macros.info_text_go('status', '상세 연결 진단 보고서', value=arg['api_status']) }}
+  </div>
+  <div class="alert alert-info">
+    <strong>사용 방법:</strong> 기본 ALive / MyEPG / FF EPG 공급원은 자동 연결됩니다.
+    먼저 아래 설정을 확인하고 <strong>설정 저장 → 통합 EPG 지금 생성</strong>을 누르세요.
+    API 키는 별도로 입력할 필요가 없습니다.
+  </div>
+  <form id="setting" name="setting">
+    <div class="card" style="background:#252525;color:#eee;padding:16px;margin-bottom:16px;">
+      <h5>자동 생성</h5>
+      {{ macros.global_setting_scheduler_button(arg['is_include'], arg['is_running']) }}
+      {{ macros.setting_input_text('main_interval', '자동 갱신 주기', value=arg['main_interval'], desc=['기본 0 */6 * * * (6시간마다)']) }}
+      {{ macros.setting_checkbox('main_auto_start', 'FF 시작 시 자동 스케줄 등록', value=arg['main_auto_start']) }}
+      <small>초기 테스트 중에는 자동 생성 스케줄을 끄고 수동으로 한 번 검증하는 것을 권장합니다.</small>
+    </div>
+    <details style="border:1px solid #555;border-radius:6px;padding:16px;margin-bottom:16px;">
+      <summary style="cursor:pointer;font-weight:bold;margin-bottom:12px;">고급 설정 — M3U·XMLTV 공급원과 채널 이름 별칭</summary>
+      {{ macros.setting_input_text('main_m3u_url', '기준 채널 목록(M3U)', value=arg['main_m3u_url'], desc=['기본: ff://alive/api/m3u — FF ALive 채널 ID 기준', 'Oracle Shyni hybrid M3U와 실제 ID가 다를 수 있습니다. Shyni 적용 전에 채널 목록을 대조하세요.']) }}
+      {{ macros.setting_input_textarea('main_epg_urls', 'EPG XMLTV 공급원', value=arg['main_epg_urls'], desc=['기본: MyEPG 우선, FF EPG 보조. 한 줄에 하나씩 입력합니다.', 'FF 내부 ff:// 주소에는 실제 API 키를 넣지 않습니다.']) }}
+      {{ macros.setting_input_textarea('main_aliases_json', '채널 별칭(JSON)', value=arg['main_aliases_json'], desc=['예: {"EBS 1": ["EBS1"]}. 다른 방송을 유사한 이름만으로 연결하지 않습니다.']) }}
+    </details>
+  </form>
+  <p style="font-size:.85em;opacity:.7">기존 EPG/MyEPG/ALive는 수정하지 않습니다. 편성 데이터가 없는 방송의 편성표를 임의로 만들어 표시하지 않습니다.</p>
+</div>
 <script type="text/javascript">
   $("body").on("click", "#make_epg_btn", function(e) {
     e.preventDefault();

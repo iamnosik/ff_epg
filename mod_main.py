@@ -87,10 +87,17 @@ def _run_safe() -> None:
         P.ModelSetting.set("main_status", "실행 중")
         report = _generate()
         P.ModelSetting.set("main_status", "정상")
+        P.ModelSetting.set("main_last_error", "")
         P.logger.info("EPGCustom 생성 완료: 연결=%s, 편성항목=%s",
                       report["편성표연결"], report["편성항목"])
     except Exception as exc:
         P.ModelSetting.set("main_status", "실패")
+        # 전체 인증 URL, 헤더, 네트워크 예외 메시지는 설정 DB와 화면에 노출하지 않는다.
+        # 사용자가 직접 고칠 수 있는 값 검증 오류만 안전한 문구로 표시한다.
+        visible = str(exc) if isinstance(exc, (ValueError, RuntimeError)) else type(exc).__name__
+        if "://" in visible or "apikey" in visible.lower():
+            visible = type(exc).__name__
+        P.ModelSetting.set("main_last_error", visible[:160])
         P.logger.error("EPGCustom 생성 실패: %s", type(exc).__name__)
     finally:
         _LOCK.release()
@@ -109,6 +116,7 @@ class ModuleMain(PluginModuleBase):
             "main_last_run": "",
             "main_last_summary": "",
             "main_status": "미실행",
+            "main_last_error": "",
         }
 
     def process_menu(self, sub, req):
@@ -141,9 +149,18 @@ class ModuleMain(PluginModuleBase):
             return send_file(str(target), mimetype="application/xml")
         if sub == "status":
             target = directory / "report.json"
-            if not target.is_file():
-                return jsonify({"상태": P.ModelSetting.get("main_status"), "생성보고서": None})
-            return send_file(str(target), mimetype="application/json")
+            latest = None
+            if target.is_file():
+                try:
+                    latest = json.loads(target.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    P.logger.warning("EPGCustom 마지막 진단 보고서 읽기 실패")
+            return jsonify({
+                "상태": P.ModelSetting.get("main_status"),
+                "마지막오류": P.ModelSetting.get("main_last_error") or "",
+                "최근성공시각": P.ModelSetting.get("main_last_run") or "",
+                "생성보고서": latest,
+            })
         abort(404)
 
     def scheduler_function(self):

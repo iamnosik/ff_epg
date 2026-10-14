@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 _ATTR = re.compile(r'([\w-]+)="([^"]*)"')
-_TIME = re.compile(r'^(\d{12}|\d{14})(?:\s*([+-])(\d{2})(\d{2}))?')
+_TIME = re.compile(r'^(\d{14}|\d{12})(?:\s+([+-])(\d{2})(\d{2}))?$')
 _KST = timezone(timedelta(hours=9))
 
 
@@ -139,11 +139,11 @@ def build_epg(
     for label, xml in feeds:
         names, programmes = parse_xmltv(xml)
         prepared.append((label, names, programmes, _make_index(names, programmes)))
-    tv = ET.Element("tv", {"generator-info-name": "EPGCustom v0.1.3"})
+    tv = ET.Element("tv", {"generator-info-name": "EPGCustom v0.2.0"})
     report = {
         "전체채널": len(channels), "편성표연결": 0, "편성표미연결": 0,
         "편성항목": 0, "공급원별연결": {name: 0 for name, _ in feeds},
-        "미연결채널": [],
+        "미연결채널": [], "채널별상태": [],
     }
     for channel in channels:
         node = ET.SubElement(tv, "channel", {"id": channel["id"]})
@@ -152,7 +152,8 @@ def build_epg(
             ET.SubElement(node, "icon", {"src": channel["logo"]})
     for channel in channels:
         selected, provider = [], None
-        for label, names, programmes, index in prepared:
+        candidates = []
+        for priority, (label, names, programmes, index) in enumerate(prepared):
             cid = _match_id(channel, names, programmes, index, aliases)
             if cid is None:
                 continue
@@ -165,18 +166,41 @@ def build_epg(
                 if stop < oldest or start > newest:
                     continue
                 title = (item.findtext("title") or "").strip()
-                key = (item.get("start", ""), item.get("stop", ""), title)
+                key = (start, stop, title)
                 if key in seen:
                     continue
                 seen.add(key)
                 current.append(item)
             if current:
-                provider, selected = label, current
-                break
+                # 동일 시간에 겹치는 편성표가 많아도 판단을 과대평가하지 않도록
+                # 유효한 시간 범위의 합집합 길이를 비교한다.
+                spans = sorted(
+                    (xmltv_time(it.get("start")), xmltv_time(it.get("stop")))
+                    for it in current
+                )
+                merged = []
+                for first, last in spans:
+                    if merged and first <= merged[-1][1]:
+                        merged[-1] = (merged[-1][0], max(merged[-1][1], last))
+                    else:
+                        merged.append((first, last))
+                coverage = sum((last - first).total_seconds()
+                               for first, last in merged)
+                candidates.append((priority, label, current, coverage))
+        if candidates:
+            # 공급원 우선순위는 유지하되, 20% 이상 편성시간이 부족하면
+            # 더 충실한 공급원을 선택한다. 채널마다 하나의 공급원만 사용해
+            # 서로 다른 EPG의 중복·충돌 위험을 막는다.
+            best = max(item[3] for item in candidates)
+            priority, provider, selected, _ = next(
+                item for item in candidates if item[3] >= best * 0.8
+            )
         if not selected:
+            report["채널별상태"].append({"이름": channel["name"], "ID": channel["id"], "연결": False})
             report["편성표미연결"] += 1
             report["미연결채널"].append({"이름": channel["name"], "ID": channel["id"]})
             continue
+        report["채널별상태"].append({"이름": channel["name"], "ID": channel["id"], "연결": True, "공급원": provider, "편성항목": len(selected)})
         report["편성표연결"] += 1
         report["공급원별연결"][provider] += 1
         for item in sorted(selected, key=lambda e: e.get("start", "")):
