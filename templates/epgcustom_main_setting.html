@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+{{ macros.m_button_group([['globalSettingSaveBtn', '설정 저장'], ['make_epg_btn', 'EPG 생성']]) }}
+{{ macros.m_hr() }}
+<form id="setting" name="setting">
+  {{ macros.setting_input_text('main_m3u_url', '채널 목록(M3U)', value=arg['main_m3u_url'], desc=['Shyni가 사용하는 채널 목록과 동일한 tvg-id의 M3U를 지정합니다.']) }}
+  {{ macros.setting_input_textarea('main_epg_urls', '편성표 XMLTV 주소', value=arg['main_epg_urls'], desc=['한 줄에 공급원 주소 하나씩 입력합니다. 위에 있는 공급원이 우선입니다.', '인증 정보가 포함된 URL은 외부에 공개하지 마세요.']) }}
+  {{ macros.setting_input_textarea('main_aliases_json', '채널명 별칭(JSON)', value=arg['main_aliases_json'], desc=['예시: {"EBS 1": ["EBS1"]}', '정확하게 확인된 동일 채널만 별칭으로 등록합니다.']) }}
+  {{ macros.m_hr() }}
+  {{ macros.global_setting_scheduler_button(arg['is_include'], arg['is_running']) }}
+  {{ macros.setting_input_text('main_interval', '자동 갱신 주기', value=arg['main_interval'], desc=['Cron 예시: 0 */6 * * * (6시간마다)']) }}
+  {{ macros.setting_checkbox('main_auto_start', '시작 시 자동 스케줄 등록', value=arg['main_auto_start']) }}
+  {{ macros.m_hr() }}
+  {{ macros.info_text_go('epgall', '통합 EPG XMLTV 주소', value=arg['api_epgall']) }}
+  {{ macros.info_text_go('status', 'EPG 연결률 보고서', value=arg['api_status']) }}
+  <div class="alert alert-info" role="status">
+    <strong>최근 실행 상태:</strong> {{ arg['main_status'] }} / {{ arg['main_last_run'] }}
+    {{ arg['main_last_summary'] }}
+  </div>
+</form>
+<script type="text/javascript">
+  $("body").on("click", "#make_epg_btn", function(e) {
+    e.preventDefault();
+    globalSendCommand('make');
+  });
+</script>
+{% endblock %}
