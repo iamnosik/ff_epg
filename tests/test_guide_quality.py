@@ -55,9 +55,18 @@ class GuideQualityTests(unittest.TestCase):
     def test_significantly_better_guide_source_is_selected(self):
         first=make_xml(records(1))
         second=make_xml(records(6))
-        xml,report=build_epg(M3U,[('MyEPG',first),('FF EPG',second)],now=NOW)
+        xml,report=build_epg(M3U,[('MyEPG',first),('FF EPG',second)],now=NOW,prefer_primary=False)
         self.assertEqual(report['공급원별연결']['FF EPG'],1)
         self.assertEqual(len(ET.fromstring(xml).findall('programme')),6)
+
+    def test_myepg_priority_over_larger_backup(self):
+        first = make_xml(records(1))
+        second = make_xml(records(6))
+        _, report = build_epg(
+            M3U, [('MyEPG', first), ('KR1', second)],
+            now=NOW, prefer_primary=True)
+        self.assertEqual(report['공급원별연결'], {'MyEPG': 1, 'KR1': 0})
+        self.assertEqual(report['편성항목'], 1)
 
     def test_other_mbc_channel_is_not_mapped(self):
         other=make_xml(records(5),name='MBC 뉴스',cid='mbc-news')

@@ -16,7 +16,9 @@ _KST = timezone(timedelta(hours=9))
 def normalize_name(value: str) -> str:
     """대소문자·공백·구두점만 보정. 다른 채널로 자동 추정하지 않는다."""
     value = unicodedata.normalize("NFKC", value or "").casefold()
-    return "".join(ch for ch in value if ch.isalnum())
+    # '+'와 '&'는 실제로 다른 방송을 구분하는 채널명의 일부다.
+    # SPOTV Prime / SPOTV Prime+ 같은 충돌을 막기 위해 버리지 않는다.
+    return "".join(ch for ch in value if ch.isalnum() or ch in "+&")
 
 
 def parse_m3u(data: bytes | str) -> list[dict[str, str]]:
@@ -106,15 +108,36 @@ def _make_index(names, programmes):
 
 
 def _match_id(channel, names, programmes, index, aliases):
-    if programmes.get(channel["id"]):
-        return channel["id"]
-    options = [channel["name"], channel["id"]]
+    """ID 정확 일치 → 방송명 정확 일치 → 검증된 별칭 → 안전한 정규화 순서.
+
+    비슷해 보이는 다른 방송을 결코 자동으로 대신 매핑하지 않는다.
+    """
+    cid = channel["id"]
+    if programmes.get(cid):
+        return cid
+    options = [channel["name"], cid]
     options.extend(aliases.get(channel["name"], []))
-    options.extend(aliases.get(channel["id"], []))
+    options.extend(aliases.get(cid, []))
+
+    # 정확한 비교에서는 +, &, 띄어쓰기를 유지한다.
+    # 동일 명칭을 가진 서로 다른 소스 ID가 여러 개면 임의 선택하지 않는다.
+    def precise(value):
+        return unicodedata.normalize("NFKC", value or "").strip().casefold()
+
     for option in options:
-        matches = index.get(normalize_name(option), set())
-        if len(matches) == 1:
-            return next(iter(matches))
+        needle = precise(option)
+        candidates = {src_id for src_id, display in names.items()
+                      if programmes.get(src_id)
+                      and (precise(src_id) == needle or precise(display) == needle)}
+        if len(candidates) == 1:
+            return next(iter(candidates))
+
+    # 'EBS 1'과 'EBS1' 같은 명백한 공백 차이는 정규화로 처리한다.
+    # 정확히 하나일 때만 반환하며 '+'와 '&'는 정규화에서도 유지된다.
+    for option in options:
+        candidates = index.get(normalize_name(option), set())
+        if len(candidates) == 1:
+            return next(iter(candidates))
     return None
 
 
@@ -122,6 +145,8 @@ def build_epg(
     m3u: bytes | str, feeds: list[tuple[str, bytes]],
     aliases: dict[str, list[str]] | None = None,
     now: datetime | None = None, forward_days: int = 8,
+    prefer_primary: bool = True,
+    parsed_feeds: list[tuple[str, dict[str, str], dict[str, list[ET.Element]]]] | None = None,
 ) -> tuple[bytes, dict[str, Any]]:
     """상위 공급원에 유효한 편성표가 없으면 다음 공급원으로 대체한다."""
     channels = parse_m3u(m3u)
@@ -136,10 +161,16 @@ def build_epg(
     oldest = now - timedelta(hours=2)
     newest = now + timedelta(days=forward_days)
     prepared = []
-    for label, xml in feeds:
-        names, programmes = parse_xmltv(xml)
-        prepared.append((label, names, programmes, _make_index(names, programmes)))
-    tv = ET.Element("tv", {"generator-info-name": "EPGCustom v0.2.1"})
+    if parsed_feeds is not None:
+        if [label for label, _, _ in parsed_feeds] != [label for label, _ in feeds]:
+            raise ValueError("공급원 파싱 데이터 순서가 다릅니다.")
+        for label, names, programmes in parsed_feeds:
+            prepared.append((label, names, programmes, _make_index(names, programmes)))
+    else:
+        for label, xml in feeds:
+            names, programmes = parse_xmltv(xml)
+            prepared.append((label, names, programmes, _make_index(names, programmes)))
+    tv = ET.Element("tv", {"generator-info-name": "EPGCustom v0.3.0"})
     report = {
         "전체채널": len(channels), "편성표연결": 0, "편성표미연결": 0,
         "편성항목": 0, "공급원별연결": {name: 0 for name, _ in feeds},
@@ -188,13 +219,16 @@ def build_epg(
                                for first, last in merged)
                 candidates.append((priority, label, current, coverage))
         if candidates:
-            # 공급원 우선순위는 유지하되, 20% 이상 편성시간이 부족하면
-            # 더 충실한 공급원을 선택한다. 채널마다 하나의 공급원만 사용해
-            # 서로 다른 EPG의 중복·충돌 위험을 막는다.
-            best = max(item[3] for item in candidates)
-            priority, provider, selected, _ = next(
-                item for item in candidates if item[3] >= best * 0.8
-            )
+            # 기본 정책은 원본 MyEPG 우선: 정상 편성이 있다면 KR1으로 갈아타지 않는다.
+            # 원본이 없거나 만료된 경우에만 다음 공급원으로 보완한다.
+            # 선택 옵션을 끄면 이전 버전의 80% 편성 범위 비교 방식을 사용한다.
+            if prefer_primary:
+                priority, provider, selected, _ = candidates[0]
+            else:
+                best = max(item[3] for item in candidates)
+                priority, provider, selected, _ = next(
+                    item for item in candidates if item[3] >= best * 0.8
+                )
         if not selected:
             report["채널별상태"].append({"이름": channel["name"], "ID": channel["id"], "연결": False})
             report["편성표미연결"] += 1

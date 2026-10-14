@@ -7,17 +7,29 @@ from pathlib import Path
 
 from flask import abort, jsonify, render_template, send_file
 from plugin import F, PluginModuleBase, ToolUtil
-from .service.core import build_epg, parse_m3u, parse_xmltv
+from .service.core import build_epg, parse_m3u, parse_xmltv, parse_aliases
 from .service.hybrid import merge_shyni_hybrid
 from .service.io import atomic_json, atomic_write, fetch_xml
 from .service.sources import (
-    DEFAULT_M3U, DEFAULT_EPGS, IPROXY_M3U, m3u_setting, epg_settings,
-    epg_setting_display, source_url,
+    DEFAULT_M3U, DEFAULT_EPGS, IPROXY_M3U, KR1_EPG_URL, m3u_setting,
+    epg_setting_display, effective_epg_settings, source_url,
 )
 from .setup import P
 
 _LOCK = threading.Lock()
 _KST = timezone(timedelta(hours=9))
+_VERIFIED_ALIASES = {
+    "EBS 1": ["EBS1"],
+    "TV CHOSUN": ["TV조선"],
+    "ANIMAX": ["애니맥스"],
+}
+
+
+def _is_enabled(value, default=True) -> bool:
+    if value is None or value == "":
+        return default
+    return str(value).lower() in ("true", "1", "on", "yes")
+
 
 
 def _output_directory() -> Path:
@@ -31,14 +43,21 @@ def _generate() -> dict:
     # API 키와 서버 주소는 FF 실행 시점에만 해석하고 저장하지 않는다.
     m3u_choice = m3u_setting(setting.get("main_m3u_url"))
     m3u_url = source_url(m3u_choice, ToolUtil.make_apikey_url)
+    kr1_enabled = _is_enabled(setting.get("main_kr1_enabled"))
+    configured_sources = effective_epg_settings(
+        setting.get("main_epg_urls"), kr1_enabled=kr1_enabled)
     epg_urls = [source_url(item, ToolUtil.make_apikey_url)
-                for item in epg_settings(setting.get("main_epg_urls"))]
+                for item in configured_sources]
     try:
         aliases = json.loads(setting.get("main_aliases_json") or "{}")
     except json.JSONDecodeError as exc:
         raise ValueError("채널별 별칭 JSON에 오류가 있습니다.") from exc
     if not isinstance(aliases, dict):
         raise ValueError("채널별 별칭은 JSON 객체여야 합니다.")
+    # 이전 DB의 채널 별칭을 보존하면서 검증된 기본 별칭을 실행 시점에 사용한다.
+    # 사용자가 해당 채널을 설정한 경우 그 값이 우선한다 (빈 배열은 자동 별칭 해제).
+    aliases = {**_VERIFIED_ALIASES, **parse_aliases(aliases)}
+    prefer_primary = _is_enabled(setting.get("main_prefer_primary"))
 
     m3u = fetch_xml(m3u_url)
     include_native = str(setting.get("main_hybrid_compatible") or "True").lower() in ("true", "1", "on", "yes")
@@ -57,9 +76,12 @@ def _generate() -> dict:
     if channel_count < 1:
         raise ValueError("M3U 응답에 채널이 없습니다. 채널 목록 주소를 확인하세요.")
     P.logger.info("EPGCustom M3U 채널 목록 확인: %s개", channel_count)
-    feeds, failures, feed_checks = [], [], []
-    for number, url in enumerate(epg_urls, 1):
-        label = f"공급원{number}"  # API 키가 포함될 수 있는 URL은 절대로 로그에 기록하지 않는다.
+    feeds, failures, feed_checks, parsed_feeds = [], [], [], []
+    for number, (setting_url, url) in enumerate(zip(configured_sources, epg_urls), 1):
+        # 원본 URL/API 키는 로그·진단 파일에 절대 포함하지 않는다.
+        label = ("MyEPG" if setting_url == DEFAULT_EPGS[0]
+                 else "KR1" if setting_url == KR1_EPG_URL
+                 else f"공급원{number}")
         try:
             xml = fetch_xml(url)
             names, programmes = parse_xmltv(xml)
@@ -67,6 +89,7 @@ def _generate() -> dict:
             if not names or not programme_count:
                 raise ValueError("XMLTV 응답에 채널 또는 편성 항목이 없습니다.")
             feeds.append((label, xml))
+            parsed_feeds.append((label, names, programmes))
             feed_checks.append({"공급원": label, "채널수": len(names), "편성항목": programme_count})
             P.logger.info("EPGCustom %s 연결 확인: 채널=%s, 편성항목=%s",
                           label, len(names), programme_count)
@@ -76,7 +99,15 @@ def _generate() -> dict:
     if not feeds:
         raise RuntimeError("모든 XMLTV 공급원 다운로드에 실패했습니다.")
 
-    xml, report = build_epg(m3u, feeds, aliases=aliases)
+    output = _output_directory()
+    # 부분 장애 상태에서 101채널짜리 기존 EPG를 49채널짜리로 덮어쓰지 않는다.
+    # 처음 생성하는 경우에만 정상 확보된 공급원으로 제한된 결과를 허용한다.
+    if failures and (output / "epgall.xml").is_file():
+        raise RuntimeError("EPG 공급원 일부 오류로 이전 정상 XMLTV를 유지합니다.")
+
+    xml, report = build_epg(
+        m3u, feeds, aliases=aliases, prefer_primary=prefer_primary,
+        parsed_feeds=parsed_feeds)
     if not report["편성항목"]:
         raise RuntimeError("현재 유효한 편성표가 없어 직전 결과를 보존합니다.")
     report["수집실패"] = failures
@@ -87,7 +118,11 @@ def _generate() -> dict:
                          else "FF ALive 단독 ID (ff_iproxy2 조회 실패)")
     report["채널목록진단"] = channel_diag
     report["생성시각"] = datetime.now(_KST).isoformat(timespec="seconds")
-    output = _output_directory()
+    report["공급원정책"] = {
+        "MyEPG우선": prefer_primary,
+        "KR1연동": kr1_enabled and KR1_EPG_URL in configured_sources,
+        "부분장애시파일보존": True,
+    }
     atomic_write(output / "epgall.xml", xml)
     atomic_json(output / "report.json", report)
     setting.set("main_last_run", report["생성시각"])
@@ -111,7 +146,7 @@ def _run_safe() -> None:
     try:
         P.ModelSetting.set("main_status", "실행 중")
         report = _generate()
-        P.ModelSetting.set("main_status", "정상")
+        P.ModelSetting.set("main_status", "부분 성공" if report["수집실패"] else "정상")
         P.ModelSetting.set("main_last_error", "")
         P.logger.info("EPGCustom 생성 완료: 연결=%s, 편성항목=%s",
                       report["편성표연결"], report["편성항목"])
@@ -136,6 +171,8 @@ class ModuleMain(PluginModuleBase):
             "main_m3u_url": DEFAULT_M3U,
             "main_epg_urls": "\n".join(DEFAULT_EPGS),
             "main_hybrid_compatible": "True",
+            "main_kr1_enabled": "True",
+            "main_prefer_primary": "True",
             "main_aliases_json": '{"EBS 1": ["EBS1"]}',
             "main_auto_start": "False",
             "main_interval": "0 */6 * * *",
@@ -153,6 +190,8 @@ class ModuleMain(PluginModuleBase):
         arg["main_m3u_url"] = m3u_setting(arg.get("main_m3u_url"))
         arg["main_epg_urls"] = epg_setting_display(arg.get("main_epg_urls"))
         arg["main_hybrid_compatible"] = arg.get("main_hybrid_compatible") or "True"
+        arg["main_kr1_enabled"] = arg.get("main_kr1_enabled") or "True"
+        arg["main_prefer_primary"] = arg.get("main_prefer_primary") or "True"
         arg["is_include"] = F.scheduler.is_include(self.get_scheduler_name())
         arg["is_running"] = F.scheduler.is_running(self.get_scheduler_name())
         arg["api_epgall"] = ToolUtil.make_apikey_url("/epgcustom/api/epgall")

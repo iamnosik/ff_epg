@@ -64,7 +64,7 @@ class RuntimeFlowTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        DummySetting.values = {"main_m3u_url": "", "main_epg_urls": "", "main_aliases_json": "{}"}
+        DummySetting.values = {"main_m3u_url": "", "main_epg_urls": "", "main_aliases_json": "{}", "main_kr1_enabled": "False"}
         self.url_reads = []
         self.fake_f = types.SimpleNamespace(
             config={"path_data": self.tmp.name},
@@ -125,6 +125,8 @@ class RuntimeFlowTests(unittest.TestCase):
         self.assertEqual(arg["main_m3u_url"], "ff://alive/api/m3u")
         self.assertIn("ff://myepg/api/epgall", arg["main_epg_urls"])
         self.assertNotIn("ff://epg/api/xml/alive", arg["main_epg_urls"])
+        self.assertEqual(arg["main_prefer_primary"], "True")
+        self.assertEqual(arg["main_kr1_enabled"], "False")
         self.assertEqual(DummySetting.values["main_m3u_url"], "")
         self.assertEqual(DummySetting.values["main_epg_urls"], "")
 
@@ -207,6 +209,124 @@ class RuntimeFlowTests(unittest.TestCase):
         self.assertEqual(report["전체채널"], 1)
         self.assertEqual(report["채널목록진단"]["모드"], "지정 M3U")
         self.assertFalse(any("/ff_iproxy2/" in url for url in self.url_reads))
+
+
+    def _two_channel_sources(self, broken_kr1=False):
+        from service.sources import KR1_EPG_URL
+        joined = (M3U + '#EXTINF:-1 tvg-id="MBC",MBC\n'
+                  'https://example.invalid/mbc\n').encode()
+        extra = (b'<tv><channel id="MBC.kr"><display-name>MBC</display-name></channel>'
+                 b'<programme channel="MBC.kr" start="20261014090000 +0900" '
+                 b'stop="20261014110000 +0900"><title>MBC live</title></programme></tv>')
+        def mock_fetch(url):
+            if url.endswith("/alive/api/m3u?apikey=RUNTIME_TEST"):
+                return joined
+            if url.endswith("/myepg/api/epgall?apikey=RUNTIME_TEST"):
+                return XMLTV
+            if url == KR1_EPG_URL:
+                if broken_kr1:
+                    raise OSError("KR1 network failure")
+                return extra
+            raise ValueError("unrecognized test URL")
+        return mock_fetch
+
+    def test_kr1_adds_missing_channel_without_replacing_myepg(self):
+        DummySetting.values.update({
+            "main_kr1_enabled": "True",
+            "main_hybrid_compatible": "False",
+        })
+        self.module.fetch_xml = self._two_channel_sources()
+        report = self.module._generate()
+        self.assertEqual(report["전체채널"], 2)
+        self.assertEqual(report["편성표연결"], 2)
+        self.assertEqual(report["공급원별연결"], {"MyEPG": 1, "KR1": 1})
+        self.assertEqual(report["공급원정책"]["KR1연동"], True)
+        self.assertEqual(report["공급원정책"]["MyEPG우선"], True)
+        self.assertEqual(DummySetting.values["main_epg_urls"], "")
+
+    def test_failed_secondary_keeps_both_last_good_files(self):
+        DummySetting.values.update({
+            "main_kr1_enabled": "True",
+            "main_hybrid_compatible": "False",
+        })
+        output = Path(self.tmp.name) / "epgcustom"
+        self.module.fetch_xml = self._two_channel_sources()
+        self.module._run_safe()
+        self.assertEqual(DummySetting.values["main_status"], "정상")
+        xml_before = (output / "epgall.xml").read_bytes()
+        report_before = (output / "report.json").read_bytes()
+        success_at = DummySetting.values["main_last_run"]
+
+        self.module.fetch_xml = self._two_channel_sources(broken_kr1=True)
+        self.module._run_safe()
+        self.assertEqual(DummySetting.values["main_status"], "실패")
+        self.assertIn("유지", DummySetting.values["main_last_error"])
+        self.assertEqual((output / "epgall.xml").read_bytes(), xml_before)
+        self.assertEqual((output / "report.json").read_bytes(), report_before)
+        self.assertEqual(DummySetting.values["main_last_run"], success_at)
+
+    def test_no_previous_file_allows_partial_success(self):
+        DummySetting.values.update({
+            "main_kr1_enabled": "True",
+            "main_hybrid_compatible": "False",
+        })
+        self.module.fetch_xml = self._two_channel_sources(broken_kr1=True)
+        self.module._run_safe()
+        output = Path(self.tmp.name) / "epgcustom"
+        self.assertEqual(DummySetting.values["main_status"], "부분 성공")
+        self.assertTrue((output / "epgall.xml").is_file())
+        report = __import__("json").loads((output / "report.json").read_text())
+        self.assertEqual(report["편성표연결"], 1)
+        self.assertEqual(report["수집실패"][0]["공급원"], "KR1")
+
+    def test_kr1_off_does_not_fetch_third_party(self):
+        DummySetting.values.update({
+            "main_kr1_enabled": "False",
+            "main_hybrid_compatible": "False",
+        })
+        self.module.fetch_xml = self._fetch
+        result = self.module._generate()
+        self.assertEqual(result["공급원정책"]["KR1연동"], False)
+        self.assertEqual(result["편성표연결"], 1)
+        self.assertFalse(any("epgshare01.online" in x for x in self.url_reads))
+
+
+
+    def test_verified_aliases_apply_and_user_override_can_disable(self):
+        from service.sources import KR1_EPG_URL
+        DummySetting.values.update({
+            "main_kr1_enabled": "True",
+            "main_hybrid_compatible": "False",
+        })
+        m3u = (M3U + '#EXTINF:-1 tvg-id="TV CHOSUN",TV CHOSUN\n'
+               'https://example.invalid/tvchosun\n'
+               '#EXTINF:-1 tvg-id="ANIMAX",ANIMAX\n'
+               'https://example.invalid/animax\n').encode()
+        kr1 = (b'<tv>'
+               b'<channel id="TVchosun.kr"><display-name>TV\xec\xa1\xb0\xec\x84\xa0</display-name></channel>'
+               b'<channel id="animax.kr"><display-name>\xec\x95\xa0\xeb\x8b\x88\xeb\xa7\xa5\xec\x8a\xa4</display-name></channel>'
+               b'<programme channel="TVchosun.kr" start="20261014090000 +0900" '
+               b'stop="20261014110000 +0900"><title>TV schedule</title></programme>'
+               b'<programme channel="animax.kr" start="20261014090000 +0900" '
+               b'stop="20261014110000 +0900"><title>Anime</title></programme></tv>')
+        def mock_fetch(url):
+            if url.endswith("/alive/api/m3u?apikey=RUNTIME_TEST"):
+                return m3u
+            if url.endswith("/myepg/api/epgall?apikey=RUNTIME_TEST"):
+                return XMLTV
+            if url == KR1_EPG_URL:
+                return kr1
+            raise ValueError("unexpected URL")
+        self.module.fetch_xml = mock_fetch
+        report = self.module._generate()
+        self.assertEqual(report["편성표연결"], 3)
+        self.assertEqual(report["공급원별연결"], {"MyEPG": 1, "KR1": 2})
+
+        DummySetting.values["main_aliases_json"] = '{"ANIMAX": []}'
+        report2 = self.module._generate()
+        self.assertEqual(report2["편성표연결"], 2)
+        self.assertIn("ANIMAX", {x["ID"] for x in report2["미연결채널"]})
+
 
 
 if __name__ == "__main__":

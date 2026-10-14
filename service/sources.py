@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 # 전체 소스 강제 출력(m3uall)은 중복/미선택 채널이 많을 수 있다.
 DEFAULT_M3U = "ff://alive/api/m3u"
 DEFAULT_EPGS = ("ff://myepg/api/epgall",)
+KR1_EPG_URL = "https://epgshare01.online/epgshare01/epg_ripper_KR1.xml.gz"
 LEGACY_DEFAULT_EPGS = ("ff://myepg/api/epgall", "ff://epg/api/xml/alive")
 IPROXY_M3U = "ff://ff_iproxy2/api/m3u"
 
@@ -38,6 +39,19 @@ def epg_settings(saved_value: str | None) -> list[str]:
         # v0.2.0 자동 기본값에서 Synology에 없는 FF EPG의 404를 제거한다.
         return list(DEFAULT_EPGS)
     return lines if lines else list(DEFAULT_EPGS)
+
+
+
+def effective_epg_settings(saved_value: str | None, kr1_enabled: bool = True) -> list[str]:
+    """기존 설정은 그대로 두고 MyEPG 단일 기본값에만 KR1을 보완한다.
+
+    사용자가 등록한 공급원이 하나라도 별도로 있으면 임의로 공급원을 추가하지 않는다.
+    KR1 사용 여부는 별도 설정으로 제어하며, DB에 기존 URL을 덮어쓰지 않는다.
+    """
+    sources = epg_settings(saved_value)
+    if kr1_enabled and sources == list(DEFAULT_EPGS):
+        return sources + [KR1_EPG_URL]
+    return sources
 
 
 def epg_setting_display(saved_value: str | None) -> str:

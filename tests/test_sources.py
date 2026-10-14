@@ -37,6 +37,37 @@ class SourceDefaultsTests(unittest.TestCase):
         )
         self.assertEqual(self.calls, ["/ff_iproxy2/api/m3u?type=mpegts"])
 
+    def test_kr1_is_appended_only_to_myepg_default(self):
+        from service.sources import effective_epg_settings, KR1_EPG_URL
+        self.assertEqual(
+            effective_epg_settings("ff://myepg/api/epgall"),
+            ["ff://myepg/api/epgall", KR1_EPG_URL]
+        )
+        self.assertEqual(
+            effective_epg_settings("", kr1_enabled=False),
+            ["ff://myepg/api/epgall"]
+        )
+        self.assertEqual(
+            effective_epg_settings("ff://myepg/api/epgall\nff://epg/api/xml/alive"),
+            ["ff://myepg/api/epgall", KR1_EPG_URL]
+        )
+
+    def test_custom_xmltv_sources_do_not_get_auto_modified(self):
+        from service.sources import effective_epg_settings, KR1_EPG_URL
+        custom = "ff://myepg/api/epgall\nhttps://my-private.example/xmltv.xml"
+        self.assertEqual(
+            effective_epg_settings(custom),
+            ["ff://myepg/api/epgall", "https://my-private.example/xmltv.xml"]
+        )
+        self.assertEqual(
+            effective_epg_settings("https://my-private.example/xmltv.xml"),
+            ["https://my-private.example/xmltv.xml"]
+        )
+        self.assertEqual(
+            effective_epg_settings("ff://myepg/api/epgall\n" + KR1_EPG_URL),
+            ["ff://myepg/api/epgall", KR1_EPG_URL]
+        )
+
     def test_custom_user_values_preserved(self):
         custom_m3u = "https://custom.example.test/hybrid/api/m3u?key=abc"
         custom_epg = "https://custom.example.test/guide.xml\n# comment\nhttps://backup.example.test/epg"
