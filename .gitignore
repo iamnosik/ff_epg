@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.env
+.env.*
+*.log
+*.db
+*.sqlite*
+*.xml
+config.local.json
+# 생성된 편성표와 인증 데이터는 Git에 올리지 않습니다.

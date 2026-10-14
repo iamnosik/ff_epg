@@ -1,0 +1,6 @@
+title: "EPGCustom"
+version: "0.1.0"
+package_name: "epgcustom"
+developer: "iamnosik"
+description: "기존 EPG/XMLTV 소스를 통합하고 채널 ID를 매핑하는 독립 플러그인"
+home: "https://github.com/iamnosik/ff_epg"
