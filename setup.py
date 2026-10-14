@@ -7,7 +7,7 @@ setting = {
     "use_default_setting": True,
     "home_module": None,
     "menu": {
-        "uri": __package__,
+        "uri": "epgcustom",  # 저장소 폴더 ff_epg와 무관하게 API/BluePrint 경로에 맞춘다.
         "name": "EPGCustom",
         "list": [
             {"uri": "main/setting", "name": "통합 EPG 설정"},
