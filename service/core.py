@@ -139,7 +139,7 @@ def build_epg(
     for label, xml in feeds:
         names, programmes = parse_xmltv(xml)
         prepared.append((label, names, programmes, _make_index(names, programmes)))
-    tv = ET.Element("tv", {"generator-info-name": "EPGCustom v0.1.0"})
+    tv = ET.Element("tv", {"generator-info-name": "EPGCustom v0.1.3"})
     report = {
         "전체채널": len(channels), "편성표연결": 0, "편성표미연결": 0,
         "편성항목": 0, "공급원별연결": {name: 0 for name, _ in feeds},

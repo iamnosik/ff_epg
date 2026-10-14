@@ -3,9 +3,10 @@
 {{ macros.m_button_group([['globalSettingSaveBtn', '설정 저장'], ['make_epg_btn', 'EPG 생성']]) }}
 {{ macros.m_hr() }}
 <form id="setting" name="setting">
-  {{ macros.setting_input_text('main_m3u_url', '채널 목록(M3U)', value=arg['main_m3u_url'], desc=['Shyni가 사용하는 채널 목록과 동일한 tvg-id의 M3U를 지정합니다.']) }}
-  {{ macros.setting_input_textarea('main_epg_urls', '편성표 XMLTV 주소', value=arg['main_epg_urls'], desc=['한 줄에 공급원 주소 하나씩 입력합니다. 위에 있는 공급원이 우선입니다.', '인증 정보가 포함된 URL은 외부에 공개하지 마세요.']) }}
+  {{ macros.setting_input_text('main_m3u_url', '채널 목록(M3U)', value=arg['main_m3u_url'], desc=['기본값은 FF ALive에서 현재 선택한 채널 목록입니다. ff:// 주소는 자동 연결을 뜻하며 API 키를 입력할 필요가 없습니다.', 'Shyni 독립 Proxy의 hybrid M3U와 채널 구성이 다를 경우, Synology에서 접근 가능한 Shyni M3U 주소로 교체해야 정확히 일치합니다.']) }}
+  {{ macros.setting_input_textarea('main_epg_urls', '편성표 XMLTV 주소', value=arg['main_epg_urls'], desc=['기본값: FF MyEPG 우선 → 기존 FF EPG 보완. 각 줄의 ff:// 주소는 FF에서 인증을 자동 적용합니다.', '사용자 지정 HTTP(S) 주소도 가능하며, 저장한 기존 값은 자동으로 변경하지 않습니다.']) }}
   {{ macros.setting_input_textarea('main_aliases_json', '채널명 별칭(JSON)', value=arg['main_aliases_json'], desc=['예시: {"EBS 1": ["EBS1"]}', '정확하게 확인된 동일 채널만 별칭으로 등록합니다.']) }}
+  <div class="alert alert-info" role="note">기본 공급원 주소는 FF 내부 자동 연결값입니다. 설정 저장 전에 API 키를 따로 찾을 필요가 없습니다.<br />최초 시험은 스케줄러를 끈 상태에서 <strong>설정 저장 → EPG 생성</strong> 순서로 진행해 주세요. 생성 결과는 아래 <strong>EPG 연결률 보고서</strong>에서 확인할 수 있습니다.</div>
   {{ macros.m_hr() }}
   {{ macros.global_setting_scheduler_button(arg['is_include'], arg['is_running']) }}
   {{ macros.setting_input_text('main_interval', '자동 갱신 주기', value=arg['main_interval'], desc=['Cron 예시: 0 */6 * * * (6시간마다)']) }}

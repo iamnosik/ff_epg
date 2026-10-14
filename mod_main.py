@@ -7,8 +7,12 @@ from pathlib import Path
 
 from flask import abort, jsonify, render_template, send_file
 from plugin import F, PluginModuleBase, ToolUtil
-from .service.core import build_epg
+from .service.core import build_epg, parse_m3u, parse_xmltv
 from .service.io import atomic_json, atomic_write, fetch_xml
+from .service.sources import (
+    DEFAULT_M3U, DEFAULT_EPGS, m3u_setting, epg_settings,
+    epg_setting_display, source_url,
+)
 from .setup import P
 
 _LOCK = threading.Lock()
@@ -22,13 +26,11 @@ def _output_directory() -> Path:
 
 def _generate() -> dict:
     setting = P.ModelSetting
-    m3u_url = (setting.get("main_m3u_url") or "").strip()
-    epg_urls = [
-        line.strip() for line in (setting.get("main_epg_urls") or "").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
-    if not m3u_url or not epg_urls:
-        raise ValueError("M3U 주소와 XMLTV 주소를 설정해야 합니다.")
+    # 비어 있는 기존 설정은 안전한 FF 내부 별칭으로 보완하되 DB 값은 덮어쓰지 않는다.
+    # API 키와 서버 주소는 FF 실행 시점에만 해석하고 저장하지 않는다.
+    m3u_url = source_url(m3u_setting(setting.get("main_m3u_url")), ToolUtil.make_apikey_url)
+    epg_urls = [source_url(item, ToolUtil.make_apikey_url)
+                for item in epg_settings(setting.get("main_epg_urls"))]
     try:
         aliases = json.loads(setting.get("main_aliases_json") or "{}")
     except json.JSONDecodeError as exc:
@@ -37,11 +39,23 @@ def _generate() -> dict:
         raise ValueError("채널별 별칭은 JSON 객체여야 합니다.")
 
     m3u = fetch_xml(m3u_url)
-    feeds, failures = [], []
+    channel_count = len(parse_m3u(m3u))
+    if channel_count < 1:
+        raise ValueError("M3U 응답에 채널이 없습니다. 채널 목록 주소를 확인하세요.")
+    P.logger.info("EPGCustom M3U 채널 목록 확인: %s개", channel_count)
+    feeds, failures, feed_checks = [], [], []
     for number, url in enumerate(epg_urls, 1):
         label = f"공급원{number}"  # API 키가 포함될 수 있는 URL은 절대로 로그에 기록하지 않는다.
         try:
-            feeds.append((label, fetch_xml(url)))
+            xml = fetch_xml(url)
+            names, programmes = parse_xmltv(xml)
+            programme_count = sum(map(len, programmes.values()))
+            if not names or not programme_count:
+                raise ValueError("XMLTV 응답에 채널 또는 편성 항목이 없습니다.")
+            feeds.append((label, xml))
+            feed_checks.append({"공급원": label, "채널수": len(names), "편성항목": programme_count})
+            P.logger.info("EPGCustom %s 연결 확인: 채널=%s, 편성항목=%s",
+                          label, len(names), programme_count)
         except Exception as exc:
             failures.append({"공급원": label, "오류유형": type(exc).__name__})
             P.logger.warning("%s 다운로드 실패: %s", label, type(exc).__name__)
@@ -52,6 +66,8 @@ def _generate() -> dict:
     if not report["편성항목"]:
         raise RuntimeError("현재 유효한 편성표가 없어 직전 결과를 보존합니다.")
     report["수집실패"] = failures
+    report["연결진단"] = {"M3U채널": channel_count, "XMLTV공급원": feed_checks}
+    report["채널목록기준"] = "설정된 M3U의 tvg-id (기본값은 FF ALive)"
     report["생성시각"] = datetime.now(_KST).isoformat(timespec="seconds")
     output = _output_directory()
     atomic_write(output / "epgall.xml", xml)
@@ -85,8 +101,8 @@ class ModuleMain(PluginModuleBase):
         super().__init__(plugin, name="main", first_menu="setting", scheduler_desc="통합 EPG 자동 생성")
         self.db_default = {
             "main_db_version": "1",
-            "main_m3u_url": "",
-            "main_epg_urls": "",
+            "main_m3u_url": DEFAULT_M3U,
+            "main_epg_urls": "\n".join(DEFAULT_EPGS),
             "main_aliases_json": '{"EBS 1": ["EBS1"]}',
             "main_auto_start": "False",
             "main_interval": "0 */6 * * *",
@@ -98,7 +114,10 @@ class ModuleMain(PluginModuleBase):
     def process_menu(self, sub, req):
         if sub != "setting":
             abort(404)
-        arg = P.ModelSetting.to_dict()
+        arg = P.ModelSetting.to_dict() or {}
+        # 기존 DB의 빈 설정에도 기본값을 보여준다. 저장된 사용자 지정 URL은 보존한다.
+        arg["main_m3u_url"] = m3u_setting(arg.get("main_m3u_url"))
+        arg["main_epg_urls"] = epg_setting_display(arg.get("main_epg_urls"))
         arg["is_include"] = F.scheduler.is_include(self.get_scheduler_name())
         arg["is_running"] = F.scheduler.is_running(self.get_scheduler_name())
         arg["api_epgall"] = ToolUtil.make_apikey_url("/epgcustom/api/epgall")
