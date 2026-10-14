@@ -153,3 +153,21 @@ grep '^version:' /data/plugins/ff_epg/info.yaml
 - 생성된 `/epgcustom/api/epgall`의 XMLTV 유효성 및 방송 ID를 확인하고 기존 Shyni MyEPG 주소를 변경할지 최종 결정
 
 **원복:** 기존 Shyni의 MyEPG 주소를 유지하면 새 플러그인 생성 결과와 무관하게 기존 EPG를 계속 이용합니다. FF 장애 시 EPGCustom 스케줄러를 OFF로 두고 새 플러그인만 이전 버전으로 복원할 수 있습니다.
+
+
+## 12. v0.3.0 — KR1 보완 및 MyEPG 보호 운영 적용 절차
+
+1. Git 반영 후 사용자가 선택한 시점에 FF를 재시작합니다. EPGCustom \`version=0.3.0\`, \`loading=true\`를 확인합니다.
+2. EPGCustom 기본 설정 화면에서 기존 \`MyEPG\` URL 및 사용자 JSON 별칭이 변경되지 않았는지 확인합니다.
+3. **KR1 사용 ON**, **MyEPG 편성표 우선 보호 ON**, **Shyni hybrid 호환 ON**을 확인합니다. 원하는 경우 KR1을 OFF로 두고 MyEPG만 사용할 수 있습니다.
+4. 자동 갱신이 켜져 있으면 초기 시험 동안 OFF로 두고 **통합 EPG 지금 생성**을 한 번 수동 실행합니다.
+5. 상태 API의 \`공급원별연결\`, \`수집실패\`, \`공급원정책\`을 확인하고 \`전체채널\`이 Shyni 실시간 채널 수와 같아야 합니다.
+6. XMLTV \`/epgcustom/api/epgall\`은 채널 ID와 프로그램 수, MBC/JTBC/MBN/채널A/YTN, Prime/Prime+/Prime2의 올바른 분리를 확인합니다.
+7. KR1 접속이 실패하면 기존 정상 파일을 덮어쓰지 않습니다. EPGCustom의 마지막 오류 상태를 확인하고 KR1을 OFF로 둔 뒤 다시 수집할 수 있습니다.
+8. MyEPG와 새로운 통합 결과를 비교해 유효한 편성표 수가 유지·증가하는지 확인한 후 **별도 승인**을 받아 Shyni EPG URL 전환을 진행합니다.
+
+### EBS2는 별도 개발 범위
+EBS2(EBS 2TV) 공식/신뢰할 수 있는 공급원 확인 및 별도 어댑터 개발은 후속 단계입니다. EBS 플러스2를 EBS2와 합치지 않습니다.
+
+### 배포/원복
+운영 중인 FF·MyEPG·ALive·ff_iproxy2·Shyni 원본 설정 및 DB를 이번 개발 단계에서 수정하지 않습니다. 문제가 있으면 EPGCustom의 KR1을 끄고 MyEPG 단일 공급원으로 복귀하거나 이전 Git 커밋 \`v0.2.1\` 기반으로 되돌립니다.
