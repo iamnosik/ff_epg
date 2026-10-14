@@ -1,5 +1,18 @@
 # EPGCustom 변경 이력
 
+## [0.1.2] - 2026-10-14
+
+### 플러그인 메뉴 경로 보완
+- GitHub 저장소 이름 `ff_epg`와 FlaskFarm 내부 패키지명 `epgcustom`이 다를 때 메뉴 링크가 잘못 만들어질 가능성 수정
+- 플러그인 메뉴 진입 URI를 `__package__` 대신 `epgcustom`으로 명시해 FF BluePrint 경로와 통일
+- FF 플러그인 설치가 `ff_epg` 폴더를 만드는 점을 문서에 반영
+- v0.1.1의 설정 DB 바인드 자동 보완 코드는 그대로 유지
+
+### 검증
+- 패키지명과 메뉴 URI가 같은지 검사하는 단위 테스트 추가
+- FF 4.x 소스의 `plugin_install`·`PluginManager`·`MenuManager`·`default_route` 구현을 비교
+- Synology FF에 아직 배포하지 않은 개발본이며, 운영 적용 후 재검증 필요
+
 ## [0.1.1] - 2026-10-14
 
 ### 오류 수정

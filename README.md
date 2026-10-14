@@ -2,7 +2,7 @@
 
 **저장소:** https://github.com/iamnosik/ff_epg
 **패키지명:** epgcustom
-**버전:** 0.1.1 (FF 동적 설치 시 DB 바인드 오류 수정본, Synology 적용 전 검증 필요)
+**버전:** 0.1.2 (DB 바인드·메뉴 경로 호환 보완, Synology 적용 전 검증 필요)
 **언어:** Python 3.10 및 FlaskFarm(FF) 플러그인
 
 ## 개발 목적
@@ -83,7 +83,7 @@ python3 -m unittest discover -s tests -v
 python3 -m compileall -q setup.py mod_main.py service tests
 ~~~
 
-**v0.1.1 단위 테스트 결과:** 총 13개 성공 (Oracle2, Python 3.10.12). Flask-SQLAlchemy 3.x 기반 격리 컨테이너에서도 뒤늦은 DB 바인드 등록과 SQLite 설정값 저장·조회에 성공했습니다. 이는 Synology FF에서 정상 로딩을 확인했다는 의미는 아닙니다.
+**v0.1.2 단위 테스트 결과:** 총 14개 성공 (Oracle2, Python 3.10.12). Flask-SQLAlchemy 3.x 기반 격리 컨테이너에서도 뒤늦은 DB 바인드 등록과 SQLite 설정값 저장·조회에 성공했습니다. 이는 Synology FF에서 정상 로딩을 확인했다는 의미는 아닙니다.
 
 ## 운영 적용 및 원복
 
@@ -119,3 +119,11 @@ Synology FF에 0.1.0을 설치한 뒤 `plugin_load error`와 `UnboundExecutionEr
 0.1.1은 `setup.py`에서 EPGCustom의 설정 DB 엔진 존재 여부를 확인하고, 누락 시에만 등록하며 설정 테이블을 준비합니다. 기존 FF 엔진이나 다른 EPG 플러그인의 데이터는 변경하지 않습니다. 오류가 다시 발생하면 GitHub에서 버전 및 FF 플러그인 JSON의 마지막 Traceback을 확인하세요.
 
 **주의:** FF에 설치된 플러그인을 새 Git 버전으로 갱신하고 재로딩하기 전까지 이 변경은 적용되지 않습니다. Synology 운영 FF의 실제 테스트는 아직 진행하지 않았습니다.
+
+## 0.1.2 — Git 폴더 이름과 FF 패키지 이름 분리
+
+FF에서 `https://github.com/iamnosik/ff_epg`를 플러그인 설치하면 Git 폴더는 일반적으로 `ff_epg`가 되지만, `info.yaml`의 내부 FF 패키지명은 `epgcustom`입니다. FF는 플러그인 폴더 이름으로 로딩하고 설정 DB 엔진을 사전 등록하는 반면, 웹 API는 `package_name`을 사용하기 때문에 두 이름이 다른 점이 v0.1.0 로딩 오류의 핵심 원인으로 확인됐습니다.
+
+v0.1.1에서 `epgcustom` DB 엔진 누락을 안전하게 보완했고, v0.1.2에서는 메뉴 진입 URI도 `epgcustom`으로 고정했습니다. Git 폴더 이름을 강제로 바꾸거나 기존 EPG/MyEPG를 수정할 필요가 없습니다.
+
+**FF 내 실제 설치 경로는 `/data/plugins/ff_epg`일 수 있습니다.** 버전 확인 시에는 저장소 이름을 기준으로 폴더를 확인하고, 웹 주소에서는 `/epgcustom/...`을 사용합니다.

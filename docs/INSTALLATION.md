@@ -1,6 +1,6 @@
 # EPGCustom 설치 및 운영 검증 가이드
 
-**현재 상태: Synology FF에서 v0.1.0 설치는 인식되었으나 설정 DB 바인드 초기화 오류로 로딩 실패. v0.1.1 수정본은 GitHub에 반영 예정이며 Synology 운영 검증 전입니다.** 기존 FF·ALive·Shyni 설정은 유지합니다.
+**현재 상태: Synology FF에서 v0.1.0 설치는 인식되었으나 설정 DB 바인드 초기화 오류로 로딩 실패. v0.1.2 수정본을 GitHub에 반영하는 중이며 Synology 운영 검증 전입니다.** 기존 FF·ALive·Shyni 설정은 유지합니다.
 
 ## 1. 사전 확인
 
@@ -78,3 +78,27 @@ URL에 들어간 API 키를 GitHub에 커밋하지 마세요.
 6. 기존 MyEPG/ALive API가 정상인지 확인한 뒤 EPGCustom 설정 페이지와 새 XMLTV 생성 명령을 시험합니다.
 
 **운영 주의:** 현재 사용자에게서 받은 로그만으로는 Synology에 v0.1.1을 실제 반영했다는 뜻이 아닙니다. FF 컨테이너 재시작과 Shyni EPG URL 변경은 별도 승인 후 진행합니다.
+
+## 8. FF에서 저장소 폴더명과 API 패키지명 구분하기
+
+- `ff_epg`는 GitHub 저장소 이름이자 FF 설치기가 기본으로 만드는 디렉터리 이름입니다.
+- `epgcustom`은 `info.yaml`에 선언한 플러그인 패키지명입니다.
+- Git 업데이트 확인 경로는 일반적으로 `/data/plugins/ff_epg`입니다. 실제 위치는 Synology FF 컨테이너에서 확인해야 합니다.
+- 웹 메뉴 및 XMLTV 주소는 `/epgcustom/main/setting`, `/epgcustom/api/epgall`입니다.
+- FF는 시작 시 플러그인 **디렉터리명**으로 초기 SQLAlchemy 엔진 목록을 만들므로, DB 바인드 `epgcustom`은 호환 함수가 확인·등록합니다.
+- v0.1.2는 메뉴도 FF 패키지명과 일치하도록 수정했습니다.
+
+### 갱신 전 확인 (Synology 컨테이너 내부)
+
+~~~bash
+# 실제 설치 폴더가 ff_epg인지 먼저 확인
+ls -ld /data/plugins/ff_epg /data/plugins/epgcustom 2>/dev/null
+# 설치된 플러그인이 Git 저장소라면 현재 수정 사항을 확인
+git -C /data/plugins/ff_epg status --short
+# 오류 없이 Git만 최신 상태로 갱신 (기존 수정 파일 강제 덮어쓰기 금지)
+git -C /data/plugins/ff_epg pull --ff-only
+# 버전 0.1.2 확인
+grep '^version:' /data/plugins/ff_epg/info.yaml
+~~~
+
+위 예시는 FF 설치기의 기본 디렉터리명 `ff_epg`를 가정합니다. 실제 경로가 다르면 경로를 변경해야 합니다. 파일 갱신 후 **계획된 시점에 FF 재시작** 및 플러그인 JSON 로딩 상태 확인이 필요합니다. 현재 Shyni EPG URL은 유지하세요.
