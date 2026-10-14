@@ -1,6 +1,6 @@
 # EPGCustom 설치 및 운영 검증 가이드
 
-**현재 상태: GitHub 개발본. Synology 운영 FF에 미설치.** 운영 수정은 사용자가 검토한 다음 별도 진행합니다.
+**현재 상태: Synology FF에서 v0.1.0 설치는 인식되었으나 설정 DB 바인드 초기화 오류로 로딩 실패. v0.1.1 수정본은 GitHub에 반영 예정이며 Synology 운영 검증 전입니다.** 기존 FF·ALive·Shyni 설정은 유지합니다.
 
 ## 1. 사전 확인
 
@@ -52,3 +52,29 @@ URL에 들어간 API 키를 GitHub에 커밋하지 마세요.
 - EPGCustom 자동 실행을 해제합니다.
 - 필요하면 플러그인을 비활성화하되, 최초에는 파일과 설정을 보존합니다.
 - 기존 epg/myepg/Shyni/ALive의 원본 파일이나 DB는 EPGCustom이 수정하지 않습니다.
+
+## 7. v0.1.0 로딩 실패 시 대처 (2026-10-14)
+
+### 확인된 로그
+
+- 화면: EPGCustom `loading: false`, `status: plugin_load error`
+- Traceback: `sqlalchemy.exc.UnboundExecutionError: Bind key 'epgcustom' is not in 'SQLALCHEMY_BINDS' config.`
+- FF 4.x SQLAlchemy 엔진은 시작 시 플러그인 디렉터리를 스캔하며, 플러그인 설치 후 재로딩에서는 엔진 누락이 발생할 수 있습니다.
+
+### v0.1.1 보완 사항
+
+- EPGCustom 설정 DB 바인드가 이미 있으면 엔진을 변경하지 않습니다.
+- 없으면 `SQLALCHEMY_BINDS`에 등록된 `epgcustom` 주소로 엔진을 등록합니다.
+- 설정 테이블을 확인하고 생성합니다. 실패할 경우 부분적으로 등록된 엔진을 해제하고 예외를 상위로 전달합니다.
+- 기본 자동 갱신은 OFF이므로 최초 로딩만으로 외부 EPG 소스에 접근하지 않습니다.
+
+### Synology 반영 순서 (작업 전 승인 필요)
+
+1. Synology의 FF가 사용하는 `epgcustom` 실제 설치 폴더를 확인합니다.
+2. Git 추적 폴더라면 해당 폴더가 깨끗한지 확인한 뒤 `git pull --ff-only`로 최신 `main`을 받습니다. 강제 덮어쓰기와 `git reset --hard`를 사용하지 않습니다.
+3. 실제 `info.yaml`이 0.1.1로 변경됐는지 확인합니다.
+4. FF 컨테이너를 **계획된 시간에** 재시작하거나 관리 기능으로 플러그인 재로딩 후 상태를 확인합니다.
+5. FF 플러그인 JSON에서 `loading: true`와 정상 상태를 확인하고, 오류가 있으면 Traceback을 확인합니다.
+6. 기존 MyEPG/ALive API가 정상인지 확인한 뒤 EPGCustom 설정 페이지와 새 XMLTV 생성 명령을 시험합니다.
+
+**운영 주의:** 현재 사용자에게서 받은 로그만으로는 Synology에 v0.1.1을 실제 반영했다는 뜻이 아닙니다. FF 컨테이너 재시작과 Shyni EPG URL 변경은 별도 승인 후 진행합니다.

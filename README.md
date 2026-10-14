@@ -2,7 +2,7 @@
 
 **저장소:** https://github.com/iamnosik/ff_epg
 **패키지명:** epgcustom
-**버전:** 0.1.0 (개발·검증 단계)
+**버전:** 0.1.1 (FF 동적 설치 시 DB 바인드 오류 수정본, Synology 적용 전 검증 필요)
 **언어:** Python 3.10 및 FlaskFarm(FF) 플러그인
 
 ## 개발 목적
@@ -15,7 +15,7 @@ EPGCustom은 **기존 제작자 Git 저장소를 수정하지 않고**, 이미 �
 - myepg/myepg: https://github.com/myepg/myepg (참고 및 EPG 공급원)
 - FF/ALive/Shyni/Live Proxy: 기존 운영 환경 변경 없이 유지
 
-## 주요 기능(v0.1.0)
+## 주요 기능(v0.1.x)
 
 1. 원본 M3U에서 tvg-id → tvg-name → 표시명 순으로 채널 ID 결정
 2. 여러 XMLTV 공급원의 편성표 수집 및 우선순위 적용
@@ -83,7 +83,7 @@ python3 -m unittest discover -s tests -v
 python3 -m compileall -q setup.py mod_main.py service tests
 ~~~
 
-**v0.1.0 단위 테스트 결과:** 총 8개 성공 (Oracle2, Python 3.10.12). 이는 플러그인이 실제 Synology FF에서 정상 동작한다는 의미는 아닙니다.
+**v0.1.1 단위 테스트 결과:** 총 13개 성공 (Oracle2, Python 3.10.12). Flask-SQLAlchemy 3.x 기반 격리 컨테이너에서도 뒤늦은 DB 바인드 등록과 SQLite 설정값 저장·조회에 성공했습니다. 이는 Synology FF에서 정상 로딩을 확인했다는 의미는 아닙니다.
 
 ## 운영 적용 및 원복
 
@@ -111,3 +111,11 @@ python3 -m compileall -q setup.py mod_main.py service tests
 - EBS 1은 편성표 연결에 성공했고, MBC 본채널은 MyEPG 원본에 해당 데이터가 없어 여전히 미연결입니다.
 - 이는 FF 설치 검증이 아닌 **순수 EPG 통합 엔진의 실제 데이터 읽기 테스트**입니다.
 - 운영 Shyni DB, FF 플러그인, Live Proxy 및 설정은 수정하지 않았습니다.
+
+## 0.1.1 — FF의 DB 바인드 로딩 오류 보완
+
+Synology FF에 0.1.0을 설치한 뒤 `plugin_load error`와 `UnboundExecutionError: Bind key 'epgcustom'`가 보고되었습니다. FF 4.x는 시작 시 기존 플러그인의 SQLite 엔진을 만들지만, 동작 중 설치한 플러그인의 URI가 나중에 추가되면 실제 엔진 딕셔너리에 등록되지 않을 수 있습니다.
+
+0.1.1은 `setup.py`에서 EPGCustom의 설정 DB 엔진 존재 여부를 확인하고, 누락 시에만 등록하며 설정 테이블을 준비합니다. 기존 FF 엔진이나 다른 EPG 플러그인의 데이터는 변경하지 않습니다. 오류가 다시 발생하면 GitHub에서 버전 및 FF 플러그인 JSON의 마지막 Traceback을 확인하세요.
+
+**주의:** FF에 설치된 플러그인을 새 Git 버전으로 갱신하고 재로딩하기 전까지 이 변경은 적용되지 않습니다. Synology 운영 FF의 실제 테스트는 아직 진행하지 않았습니다.

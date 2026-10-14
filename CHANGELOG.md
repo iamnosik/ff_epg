@@ -1,5 +1,23 @@
 # EPGCustom 변경 이력
 
+## [0.1.1] - 2026-10-14
+
+### 오류 수정
+- Synology FF 4.x에 설치 직후 `plugin_load error`가 나타나던 현상 대응
+- `SQLALCHEMY_BINDS`에 URI만 등록되고 `F.db.engines`에 `epgcustom`이 없을 때 엔진을 추가하는 호환 처리
+- 기존 `epgcustom` 엔진이 존재하면 재생성하지 않고 설정 테이블만 확인
+- 테이블 생성 중 예외 발생 시 새로 등록한 엔진을 해제하고 원래 예외를 유지
+- 원본 EPG/MyEPG 및 FF·ALive·Shyni의 DB에는 접근·변경하지 않음
+
+### 검증
+- Python 3.10 단위 테스트 13개 통과(기존 8개 + DB 호환 테스트 5개)
+- FlaskFarm 4.0 이미지의 Flask-SQLAlchemy 환경을 사용한 **격리된** SQLite 통합 테스트 통과: 누락 엔진 등록, 재사용, 테이블 생성, 설정 저장·조회
+- Synology에 설치된 EPGCustom 0.1.0의 오류 로그를 근거로 수정하였으며, **Synology 0.1.1 운영 로딩은 아직 미검증**
+
+### 적용·원복
+- Synology FF의 epgcustom 플러그인만 Git 업데이트 후 FF 프로세스를 재시작하여 확인
+- 문제가 지속되면 기존 플러그인 비활성화 또는 이전 Git 커밋으로 원복, Shyni EPG URL은 기존 설정 유지
+
 ## [0.1.0] - 2026-10-14
 
 ### 초기 구성
