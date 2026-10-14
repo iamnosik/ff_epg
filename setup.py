@@ -11,6 +11,7 @@ setting = {
         "name": "EPGCustom",
         "list": [
             {"uri": "main/setting", "name": "통합 EPG 설정"},
+            {"uri": "main/diagnostics", "name": "채널별 진단"},
             {"uri": "manual", "name": "문서", "list": [
                 {"uri": "README.md", "name": "한글 사용 설명서"},
                 {"uri": "CHANGELOG.md", "name": "변경 이력"},

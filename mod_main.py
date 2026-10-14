@@ -8,6 +8,7 @@ from pathlib import Path
 from flask import abort, jsonify, render_template, send_file
 from plugin import F, PluginModuleBase, ToolUtil
 from .service.core import build_epg, parse_m3u, parse_xmltv, parse_aliases
+from .service.diagnostics import load_report, prepare_diagnostics_view
 from .service.hybrid import merge_shyni_hybrid
 from .service.io import atomic_json, atomic_write, fetch_xml
 from .service.sources import (
@@ -183,6 +184,13 @@ class ModuleMain(PluginModuleBase):
         }
 
     def process_menu(self, sub, req):
+        if sub == "diagnostics":
+            report, error = load_report(_output_directory() / "report.json")
+            arg = prepare_diagnostics_view(report)
+            arg["report_error"] = error
+            arg["current_status"] = P.ModelSetting.get("main_status") or "미실행"
+            arg["current_error"] = P.ModelSetting.get("main_last_error") or ""
+            return render_template("epgcustom_main_diagnostics.html", arg=arg)
         if sub != "setting":
             abort(404)
         arg = P.ModelSetting.to_dict() or {}
@@ -214,18 +222,13 @@ class ModuleMain(PluginModuleBase):
                 abort(404, "EPG 파일이 없습니다. 먼저 생성하세요.")
             return send_file(str(target), mimetype="application/xml")
         if sub == "status":
-            target = directory / "report.json"
-            latest = None
-            if target.is_file():
-                try:
-                    latest = json.loads(target.read_text(encoding="utf-8"))
-                except (OSError, ValueError):
-                    P.logger.warning("EPGCustom 마지막 진단 보고서 읽기 실패")
+            latest, error = load_report(directory / "report.json")
             return jsonify({
                 "상태": P.ModelSetting.get("main_status"),
                 "마지막오류": P.ModelSetting.get("main_last_error") or "",
                 "최근성공시각": P.ModelSetting.get("main_last_run") or "",
                 "생성보고서": latest,
+                "보고서오류": error,
             })
         abort(404)
 

@@ -27,6 +27,10 @@ class PluginIdentityTests(unittest.TestCase):
         self.assertEqual(menu_uri, package.group(1))
         # FF는 Git 폴더명을 독립적으로 정할 수 있다. 메뉴는 디렉터리 이름에 의존하지 않는다.
         self.assertEqual(menu_uri, "epgcustom")
+        menu_list = key_value(menu_node, "list")
+        menu_urls = [ast.literal_eval(key_value(item, "uri")) for item in menu_list.elts]
+        self.assertIn("main/setting", menu_urls)
+        self.assertIn("main/diagnostics", menu_urls)
 
 
 if __name__ == "__main__":

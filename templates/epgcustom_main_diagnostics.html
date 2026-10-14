@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container-fluid" style="max-width:1300px;margin:auto;padding-bottom:36px">
+  <div class="d-flex justify-content-between align-items-center flex-wrap my-3">
+    <h4>EPGCustom · 채널별 진단</h4>
+    <div>
+      <a class="btn btn-outline-secondary btn-sm" href="/epgcustom/main/setting">통합 EPG 설정</a>
+      <a class="btn btn-outline-info btn-sm" href="/epgcustom/main/diagnostics">진단 결과 새로고침</a>
+    </div>
+  </div>
+
+  <div class="card mb-3" style="padding:16px;background:#252525;color:#eee">
+    <div class="d-flex justify-content-between flex-wrap">
+      <div><strong>현재 생성 상태:</strong> {{ arg['current_status'] }}</div>
+      <div><strong>마지막 성공 보고서:</strong> {{ arg['generated'] or '없음' }}</div>
+    </div>
+    {% if arg['current_error'] %}
+      <p class="mt-2 mb-0" role="alert" style="color:#f5ba7a">최근 생성 실패: {{ arg['current_error'] }} (아래는 마지막 정상 보고서일 수 있습니다.)</p>
+    {% endif %}
+    {% if arg['report_error'] %}
+      <p class="mt-2 mb-0" role="status">{{ arg['report_error'] }} 먼저 통합 EPG를 생성하면 채널별 내역이 표시됩니다.</p>
+    {% endif %}
+    {% if not arg['detailed'] and arg['rows'] %}
+      <p class="mt-2 mb-0" role="status" style="color:#f5ba7a">이전 버전 보고서입니다. 원본 ID·미연결 사유·공유 매핑 정보는 v0.4.0에서 EPG를 새로 생성해야 표시됩니다.</p>
+    {% endif %}
+    {% if arg['limited'] %}
+      <p class="mt-2 mb-0" role="status">진단 화면에 최대 5,000개 채널만 표시합니다. 상세 내용은 JSON 보고서에서 확인하세요.</p>
+    {% endif %}
+  </div>
+
+  <div class="row mb-3">
+    <div class="col-sm-4 mb-2">
+      <div class="card" style="padding:16px;background:#252525;color:#eee">
+        <small>전체 채널</small><h3>{{ arg['total'] }}</h3>
+      </div>
+    </div>
+    <div class="col-sm-4 mb-2">
+      <div class="card" style="padding:16px;background:#252525;color:#eee">
+        <small>EPG 연결</small><h3>{{ arg['connected'] }}</h3>
+      </div>
+    </div>
+    <div class="col-sm-4 mb-2">
+      <div class="card" style="padding:16px;background:#252525;color:#eee">
+        <small>EPG 미연결</small><h3>{{ arg['unconnected'] }}</h3>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mb-3" style="padding:16px;background:#252525;color:#eee">
+    <h5>채널 검색 및 필터</h5>
+    <div class="row">
+      <div class="col-md-4 mb-2">
+        <label for="epg-diag-search">채널명·ID·원본 ID 검색</label>
+        <input id="epg-diag-search" class="form-control" type="search" placeholder="예: MBC, SPOTV Prime, EBS2" autocomplete="off">
+      </div>
+      <div class="col-md-2 mb-2">
+        <label for="epg-diag-state">연결 상태</label>
+        <select id="epg-diag-state" class="form-control">
+          <option value="all">전체</option>
+          <option value="connected">연결</option>
+          <option value="missing">미연결</option>
+          <option value="shared">원본 공유 검토</option>
+        </select>
+      </div>
+      <div class="col-md-3 mb-2">
+        <label for="epg-diag-provider">공급원</label>
+        <select id="epg-diag-provider" class="form-control">
+          <option value="">전체 공급원</option>
+          {% for provider in arg['providers'] %}
+            <option value="{{ provider }}">{{ provider }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 mb-2">
+        <label for="epg-diag-reason">미연결 사유</label>
+        <select id="epg-diag-reason" class="form-control">
+          <option value="">전체 사유</option>
+          {% for reason in arg['reasons'] %}
+            <option value="{{ reason }}">{{ reason }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="d-flex justify-content-between align-items-center flex-wrap">
+      <small id="epg-diag-visible" role="status">총 {{ arg['rows'] | length }}개 채널 표시</small>
+      <button type="button" id="epg-diag-reset" class="btn btn-outline-secondary btn-sm">필터 초기화</button>
+    </div>
+    <p class="mt-2 mb-0" style="font-size:0.85em;opacity:0.8">
+      '원본채널없음'은 현재 설정된 EPG 공급원에서 ID·표시명으로 찾지 못했다는 뜻입니다.
+      다른 공급원에도 없다는 확정 판정은 아닙니다.
+      원본 공유는 정상적인 동시송출일 수도 있으므로 오류로 단정하지 않습니다.
+    </p>
+  </div>
+
+  <div class="table-responsive" style="max-height:720px;overflow:auto">
+    <table id="epg-diag-table" class="table table-sm table-striped table-bordered" style="font-size:0.88em">
+      <thead style="position:sticky;top:0;background:#31363b;color:#fff;z-index:1">
+        <tr>
+          <th scope="col">채널명 / ID</th>
+          <th scope="col">그룹</th>
+          <th scope="col">상태</th>
+          <th scope="col">공급원</th>
+          <th scope="col">원본 ID / 연결 방식</th>
+          <th scope="col" class="text-right">편성 건수</th>
+          <th scope="col">미연결 사유 / 검토</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for channel in arg['rows'] %}
+        <tr class="epg-diag-row"
+            data-connected="{{ 'yes' if channel['연결'] else 'no' }}"
+            data-provider="{{ channel['공급원'] }}"
+            data-reason="{{ channel['미연결사유'] }}"
+            data-shared="{{ 'yes' if channel['매핑공유'] else 'no' }}">
+          <td><strong>{{ channel['이름'] }}</strong><div><small class="text-muted">{{ channel['ID'] }}</small></div></td>
+          <td>{{ channel['그룹'] or '—' }}</td>
+          <td>{% if channel['연결'] %}<span style="color:#79c9a3">연결</span>{% else %}<span style="color:#df9b70">미연결</span>{% endif %}</td>
+          <td>{{ channel['공급원'] or '—' }}</td>
+          <td>
+            {% if channel['원본채널ID'] %}
+              <strong>{{ channel['원본채널ID'] }}</strong>
+              {% if channel['원본채널명'] %}<div><small>{{ channel['원본채널명'] }}</small></div>{% endif %}
+              <div><small class="text-muted">{{ channel['매칭방식'] or '매칭방식 미기록' }}</small></div>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-right">{{ channel['편성항목'] }}</td>
+          <td>
+            {% if not channel['연결'] %}{{ channel['미연결사유'] }}
+            {% elif channel['매핑공유'] %}<span style="color:#e3bb79">원본 공유 · 검토</span>
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <details class="card mt-3" style="padding:16px;background:#252525;color:#eee">
+    <summary style="cursor:pointer;font-weight:600">동일 원본 EPG 공유 현황 · {{ arg['shared'] | length }}개 그룹</summary>
+    <p class="mt-2" style="font-size:0.9em">원본 채널 ID가 동일한 여러 대상 채널을 묶었습니다. 정상적인 동시송출·서비스 중복일 수도 있으므로 수동 검토 대상으로만 표시합니다.</p>
+    {% if arg['shared'] %}
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered">
+          <thead><tr><th scope="col">공급원</th><th scope="col">원본 ID</th><th scope="col">대상 채널 ID</th><th scope="col">판정</th></tr></thead>
+          <tbody>
+            {% for group in arg['shared'] %}
+              <tr>
+                <td>{{ group['공급원'] }}</td>
+                <td>{{ group['원본채널ID'] }}</td>
+                <td>{{ group['대상채널ID'] | join(', ') }}</td>
+                <td>{{ group['판정'] }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="mt-2">공유 내역이 없습니다{% if not arg['detailed'] %}. 이전 버전 보고서에서는 공유 여부를 판단할 수 없습니다{% endif %}.</p>
+    {% endif %}
+  </details>
+</div>
+<script type="text/javascript">
+(function () {
+  function applyFilters() {
+    var query = ($("#epg-diag-search").val() || "").toLocaleLowerCase().trim();
+    var state = $("#epg-diag-state").val();
+    var provider = $("#epg-diag-provider").val();
+    var reason = $("#epg-diag-reason").val();
+    var shown = 0;
+    $("#epg-diag-table tbody tr.epg-diag-row").each(function () {
+      var $row = $(this);
+      var connected = $row.attr("data-connected") === "yes";
+      var shared = $row.attr("data-shared") === "yes";
+      var valid = (!query || $row.text().toLocaleLowerCase().indexOf(query) !== -1)
+        && (state === "all" || (state === "connected" && connected)
+            || (state === "missing" && !connected) || (state === "shared" && shared))
+        && (!provider || $row.attr("data-provider") === provider)
+        && (!reason || $row.attr("data-reason") === reason);
+      $row.toggle(valid);
+      if (valid) { shown++; }
+    });
+    $("#epg-diag-visible").text(shown + "개 채널 표시");
+  }
+  $(function () {
+    $("#epg-diag-search").on("input", applyFilters);
+    $("#epg-diag-state, #epg-diag-provider, #epg-diag-reason").on("change", applyFilters);
+    $("#epg-diag-reset").on("click", function () {
+      $("#epg-diag-search").val("");
+      $("#epg-diag-state").val("all");
+      $("#epg-diag-provider, #epg-diag-reason").val("");
+      applyFilters();
+    });
+    applyFilters();
+  });
+})();
+</script>
+{% endblock %}

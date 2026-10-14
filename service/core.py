@@ -1,5 +1,6 @@
 """EPGCustom XMLTV 통합 엔진. FF 프레임워크에 의존하지 않아 독립 테스트할 수 있다."""
 from __future__ import annotations
+import copy
 import io
 import re
 import unicodedata
@@ -7,6 +8,8 @@ import xml.etree.ElementTree as ET
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
+
+from .diagnostics import summarize_diagnostics
 
 _ATTR = re.compile(r'([\w-]+)="([^"]*)"')
 _TIME = re.compile(r'^(\d{14}|\d{12})(?:\s+([+-])(\d{2})(\d{2}))?$')
@@ -141,6 +144,66 @@ def _match_id(channel, names, programmes, index, aliases):
     return None
 
 
+def _match_type(channel, source_id, source_name, aliases):
+    """실제로 선택된 원본의 연결 근거를 사람이 읽을 수 있게 기록한다."""
+    def exact(value):
+        return unicodedata.normalize("NFKC", value or "").strip().casefold()
+
+    if source_id == channel["id"]:
+        return "ID정확"
+    if exact(channel["name"]) == exact(source_name) or exact(channel["id"]) == exact(source_name):
+        return "이름정확"
+    aliases_for_channel = aliases.get(channel["name"], []) + aliases.get(channel["id"], [])
+    if any(exact(alias) in (exact(source_id), exact(source_name))
+           for alias in aliases_for_channel):
+        return "별칭정확"
+    if normalize_name(channel["name"]) in (
+        normalize_name(source_id), normalize_name(source_name)
+    ) or normalize_name(channel["id"]) in (
+        normalize_name(source_id), normalize_name(source_name)
+    ):
+        return "정규화"
+    return "별칭정규화"
+
+
+def _metadata_candidates(channel, names, aliases):
+    """편성 항목이 비어 있어도 채널 메타데이터 존재 여부는 진단한다."""
+    def exact(value):
+        return unicodedata.normalize("NFKC", value or "").strip().casefold()
+
+    if channel["id"] in names:
+        return {channel["id"]}
+    options = [channel["name"], channel["id"]]
+    options.extend(aliases.get(channel["name"], []))
+    options.extend(aliases.get(channel["id"], []))
+    for option in options:
+        matches = {source for source, display in names.items()
+                   if exact(source) == exact(option) or exact(display) == exact(option)}
+        if matches:
+            return matches
+    for option in options:
+        key = normalize_name(option)
+        if key:
+            matches = {source for source, display in names.items()
+                       if normalize_name(source) == key or normalize_name(display) == key}
+            if matches:
+                return matches
+    return set()
+
+
+def _missing_reason(evidence):
+    """현재 수집한 공급원 기준 원인. 외부에 해당 EPG가 없다는 뜻은 아니다."""
+    if evidence["outside"]:
+        return "유효시간대편성없음"
+    if evidence["invalid"]:
+        return "원본시간오류"
+    if evidence["no_programmes"]:
+        return "원본편성없음"
+    if evidence["ambiguous"]:
+        return "매칭모호"
+    return "원본채널없음"
+
+
 def build_epg(
     m3u: bytes | str, feeds: list[tuple[str, bytes]],
     aliases: dict[str, list[str]] | None = None,
@@ -170,7 +233,7 @@ def build_epg(
         for label, xml in feeds:
             names, programmes = parse_xmltv(xml)
             prepared.append((label, names, programmes, _make_index(names, programmes)))
-    tv = ET.Element("tv", {"generator-info-name": "EPGCustom v0.3.0"})
+    tv = ET.Element("tv", {"generator-info-name": "EPGCustom v0.4.0"})
     report = {
         "전체채널": len(channels), "편성표연결": 0, "편성표미연결": 0,
         "편성항목": 0, "공급원별연결": {name: 0 for name, _ in feeds},
@@ -182,19 +245,30 @@ def build_epg(
         if channel["logo"]:
             ET.SubElement(node, "icon", {"src": channel["logo"]})
     for channel in channels:
-        selected, provider = [], None
+        selected, provider, origin_id, origin_name, match_type = [], None, None, None, None
         candidates = []
+        evidence = {"outside": False, "invalid": False, "no_programmes": False,
+                    "ambiguous": False}
         for priority, (label, names, programmes, index) in enumerate(prepared):
             cid = _match_id(channel, names, programmes, index, aliases)
             if cid is None:
+                potential = _metadata_candidates(channel, names, aliases)
+                if len(potential) > 1:
+                    evidence["ambiguous"] = True
+                elif len(potential) == 1:
+                    candidate = next(iter(potential))
+                    if not programmes.get(candidate):
+                        evidence["no_programmes"] = True
                 continue
             current, seen = [], set()
             for item in programmes.get(cid, []):
                 start = xmltv_time(item.get("start", ""))
                 stop = xmltv_time(item.get("stop", ""))
                 if start is None or stop is None or stop <= start:
+                    evidence["invalid"] = True
                     continue
                 if stop < oldest or start > newest:
+                    evidence["outside"] = True
                     continue
                 title = (item.findtext("title") or "").strip()
                 key = (start, stop, title)
@@ -217,28 +291,44 @@ def build_epg(
                         merged.append((first, last))
                 coverage = sum((last - first).total_seconds()
                                for first, last in merged)
-                candidates.append((priority, label, current, coverage))
+                candidates.append((priority, label, cid, names.get(cid, cid),
+                                   _match_type(channel, cid, names.get(cid, cid), aliases),
+                                   current, coverage))
         if candidates:
             # 기본 정책은 원본 MyEPG 우선: 정상 편성이 있다면 KR1으로 갈아타지 않는다.
             # 원본이 없거나 만료된 경우에만 다음 공급원으로 보완한다.
             # 선택 옵션을 끄면 이전 버전의 80% 편성 범위 비교 방식을 사용한다.
             if prefer_primary:
-                priority, provider, selected, _ = candidates[0]
+                priority, provider, origin_id, origin_name, match_type, selected, _ = candidates[0]
             else:
-                best = max(item[3] for item in candidates)
-                priority, provider, selected, _ = next(
-                    item for item in candidates if item[3] >= best * 0.8
+                best = max(item[6] for item in candidates)
+                priority, provider, origin_id, origin_name, match_type, selected, _ = next(
+                    item for item in candidates if item[6] >= best * 0.8
                 )
         if not selected:
-            report["채널별상태"].append({"이름": channel["name"], "ID": channel["id"], "연결": False})
+            reason = _missing_reason(evidence)
+            report["채널별상태"].append({
+                "이름": channel["name"], "ID": channel["id"], "그룹": channel["group"],
+                "연결": False, "편성항목": 0, "미연결사유": reason,
+            })
             report["편성표미연결"] += 1
-            report["미연결채널"].append({"이름": channel["name"], "ID": channel["id"]})
+            report["미연결채널"].append({
+                "이름": channel["name"], "ID": channel["id"], "미연결사유": reason,
+            })
             continue
-        report["채널별상태"].append({"이름": channel["name"], "ID": channel["id"], "연결": True, "공급원": provider, "편성항목": len(selected)})
+        report["채널별상태"].append({
+            "이름": channel["name"], "ID": channel["id"], "그룹": channel["group"],
+            "연결": True, "공급원": provider, "편성항목": len(selected),
+            "원본채널ID": origin_id, "원본채널명": origin_name, "매칭방식": match_type,
+        })
         report["편성표연결"] += 1
         report["공급원별연결"][provider] += 1
         for item in sorted(selected, key=lambda e: e.get("start", "")):
-            item.set("channel", channel["id"])
-            tv.append(item)
+            # 같은 공급원의 원본 편성표를 두 Shyni ID에서 공유해도 각각의
+            # programme channel 속성이 유지되도록 반드시 새 XML 노드를 만든다.
+            output_item = copy.deepcopy(item)
+            output_item.set("channel", channel["id"])
+            tv.append(output_item)
         report["편성항목"] += len(selected)
+    summarize_diagnostics(report)
     return ET.tostring(tv, encoding="utf-8", xml_declaration=True), report

@@ -329,5 +329,66 @@ class RuntimeFlowTests(unittest.TestCase):
 
 
 
+    def test_diagnostics_menu_loads_safely_before_first_generation(self):
+        reply = self.module.ModuleMain(self.fake_p).process_menu("diagnostics", None)
+        self.assertEqual(reply["template"], "epgcustom_main_diagnostics.html")
+        self.assertEqual(reply["arg"]["rows"], [])
+        self.assertIn("없습니다", reply["arg"]["report_error"])
+
+    def test_diagnostics_menu_accepts_old_v03_report(self):
+        import json
+        report_dir = Path(self.tmp.name) / "epgcustom"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        old = {
+            "전체채널": 2, "편성표연결": 1, "편성표미연결": 1,
+            "채널별상태": [
+                {"ID": "KBS1", "이름": "KBS1", "연결": True,
+                 "공급원": "MyEPG", "편성항목": 48},
+                {"ID": "EBS2", "이름": "EBS2", "연결": False},
+            ],
+        }
+        (report_dir / "report.json").write_text(
+            json.dumps(old, ensure_ascii=False), encoding="utf-8")
+        reply = self.module.ModuleMain(self.fake_p).process_menu("diagnostics", None)
+        self.assertFalse(reply["arg"]["detailed"])
+        self.assertEqual(reply["arg"]["connected"], 1)
+        self.assertEqual(reply["arg"]["unconnected"], 1)
+        self.assertEqual(reply["arg"]["rows"][1]["미연결사유"],
+                         "이전 보고서: 재생성 필요")
+
+    def test_diagnostics_menu_shows_last_good_report_during_failure(self):
+        import json
+        report_dir = Path(self.tmp.name) / "epgcustom"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        new = {
+            "전체채널": 1, "편성표연결": 1, "편성표미연결": 0,
+            "채널별상태": [
+                {"ID": "MBC", "이름": "MBC", "연결": True,
+                 "공급원": "KR1", "편성항목": 83,
+                 "원본채널ID": "mbc.kr", "매칭방식": "이름정확"},
+            ],
+            "진단요약": {"연결": 1, "미연결": 0},
+            "중복매핑": [],
+        }
+        (report_dir / "report.json").write_text(
+            json.dumps(new, ensure_ascii=False), encoding="utf-8")
+        DummySetting.values["main_status"] = "실패"
+        DummySetting.values["main_last_error"] = "KR1 일시 장애"
+        reply = self.module.ModuleMain(self.fake_p).process_menu("diagnostics", None)
+        self.assertEqual(reply["arg"]["current_status"], "실패")
+        self.assertEqual(reply["arg"]["current_error"], "KR1 일시 장애")
+        self.assertTrue(reply["arg"]["detailed"])
+        self.assertEqual(reply["arg"]["rows"][0]["원본채널ID"], "mbc.kr")
+
+    def test_status_api_gracefully_handles_corrupt_report(self):
+        report_dir = Path(self.tmp.name) / "epgcustom"
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "report.json").write_bytes(b'<<incorrect json>>')
+        reply = self.module.ModuleMain(self.fake_p).process_api("status", None)
+        self.assertIsNone(reply["생성보고서"])
+        self.assertTrue(reply["보고서오류"])
+
+
+
 if __name__ == "__main__":
     unittest.main()
