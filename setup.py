@@ -1,5 +1,5 @@
 """FlaskFarm 플러그인 진입점: 기존 epg/myepg 소스와 독립 운영."""
-from plugin import create_plugin_instance
+from plugin import F, create_plugin_instance
 
 setting = {
     "filepath": __file__,
@@ -23,5 +23,11 @@ setting = {
 }
 
 P = create_plugin_instance(setting)
+
+# FF 실행 중 추가 설치된 플러그인은 SQLAlchemy 3.x 엔진 등록이 누락될 수 있다.
+# 다른 플러그인의 DB는 수정하지 않고 EPGCustom 설정 DB만 확인한다.
+from .service.ff_compat import ensure_setting_bind  # noqa: E402
+ensure_setting_bind(F, P)
+
 from .mod_main import ModuleMain  # noqa: E402
 P.set_module_list([ModuleMain])
