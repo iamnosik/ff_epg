@@ -10,13 +10,16 @@ from urllib.parse import urlsplit
 # ALive에서 활성화한 채널 목록을 기본으로 사용한다.
 # 전체 소스 강제 출력(m3uall)은 중복/미선택 채널이 많을 수 있다.
 DEFAULT_M3U = "ff://alive/api/m3u"
-DEFAULT_EPGS = ("ff://myepg/api/epgall", "ff://epg/api/xml/alive")
+DEFAULT_EPGS = ("ff://myepg/api/epgall",)
+LEGACY_DEFAULT_EPGS = ("ff://myepg/api/epgall", "ff://epg/api/xml/alive")
+IPROXY_M3U = "ff://ff_iproxy2/api/m3u"
 
 FF_SOURCE_PATHS = {
     DEFAULT_M3U: "/alive/api/m3u",
     "ff://alive/api/m3uall": "/alive/api/m3uall",
     DEFAULT_EPGS[0]: "/myepg/api/epgall",
-    DEFAULT_EPGS[1]: "/epg/api/xml/alive",
+    "ff://epg/api/xml/alive": "/epg/api/xml/alive",
+    IPROXY_M3U: "/ff_iproxy2/api/m3u?type=mpegts",
 }
 
 
@@ -26,11 +29,14 @@ def m3u_setting(saved_value: str | None) -> str:
 
 
 def epg_settings(saved_value: str | None) -> list[str]:
-    """빈 설정은 MyEPG 우선, FF EPG 보완 순서로 자동 설정한다."""
+    """빈 설정은 MyEPG를 사용하며, 과거 자동 추가된 404 경로는 제거한다."""
     lines = [
         text.strip() for text in (saved_value or "").splitlines()
         if text.strip() and not text.lstrip().startswith("#")
     ]
+    if lines == list(LEGACY_DEFAULT_EPGS):
+        # v0.2.0 자동 기본값에서 Synology에 없는 FF EPG의 404를 제거한다.
+        return list(DEFAULT_EPGS)
     return lines if lines else list(DEFAULT_EPGS)
 
 

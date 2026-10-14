@@ -83,7 +83,7 @@ class RuntimeFlowTests(unittest.TestCase):
         plugin.F = self.fake_f
         plugin.PluginModuleBase = DummyBase
         plugin.ToolUtil = types.SimpleNamespace(
-            make_apikey_url=lambda path: "https://ff.example.test" + path + "?apikey=RUNTIME_TEST"
+            make_apikey_url=lambda path: "https://ff.example.test" + path + ("&" if "?" in path else "?") + "apikey=RUNTIME_TEST"
         )
         flask = types.ModuleType("flask")
         flask.abort = lambda code, msg=None: None
@@ -124,7 +124,7 @@ class RuntimeFlowTests(unittest.TestCase):
         arg = response["arg"]
         self.assertEqual(arg["main_m3u_url"], "ff://alive/api/m3u")
         self.assertIn("ff://myepg/api/epgall", arg["main_epg_urls"])
-        self.assertIn("ff://epg/api/xml/alive", arg["main_epg_urls"])
+        self.assertNotIn("ff://epg/api/xml/alive", arg["main_epg_urls"])
         self.assertEqual(DummySetting.values["main_m3u_url"], "")
         self.assertEqual(DummySetting.values["main_epg_urls"], "")
 
@@ -143,8 +143,9 @@ class RuntimeFlowTests(unittest.TestCase):
         self.assertEqual(report["편성표연결"], 1)
         self.assertEqual(report["연결진단"]["M3U채널"], 1)
         self.assertEqual(len(report["연결진단"]["XMLTV공급원"]), 1)
-        self.assertEqual(len(report["수집실패"]), 1)
-        self.assertEqual(report["수집실패"][0]["공급원"], "공급원2")
+        self.assertEqual(len(report["수집실패"]), 0)
+        self.assertEqual(report["채널목록진단"]["모드"], "ALive 폴백")
+        self.assertIn("IProxy실패유형", report["채널목록진단"])
         self.assertEqual(DummySetting.values["main_m3u_url"], "")
         self.assertEqual(DummySetting.values["main_epg_urls"], "")
         self.assertNotIn("RUNTIME_TEST", repr(report))
@@ -184,6 +185,28 @@ class RuntimeFlowTests(unittest.TestCase):
         self.assertEqual(DummySetting.values["main_status"], "실패")
         self.assertEqual(DummySetting.values["main_last_error"], "ValueError")
         self.assertNotIn("FAKE_SECRET", repr(DummySetting.values))
+
+    def test_hybrid_channel_mode_generates_native_only_ids(self):
+        raw_fetch = self._fetch
+        def mock_fetch(url):
+            if "/ff_iproxy2/api/m3u?type=mpegts&apikey=" in url:
+                return b'#EXTM3U\n#EXTINF:-1 tvg-name="YTN",YTN\nhttps://example.invalid/ytn\n'
+            return raw_fetch(url)
+        self.module.fetch_xml = mock_fetch
+        report = self.module._generate()
+        self.assertEqual(report["전체채널"], 2)
+        self.assertEqual(report["편성표연결"], 1)
+        self.assertEqual(report["채널목록진단"]["모드"], "Shyni hybrid 호환")
+        self.assertEqual(report["채널목록진단"]["IProxy추가채널"], 1)
+        self.assertIn("hybrid 추가 1개", DummySetting.values["main_last_summary"])
+
+    def test_hybrid_disabled_leaves_alive_channels_unchanged(self):
+        DummySetting.values["main_hybrid_compatible"] = "False"
+        self.module.fetch_xml = self._fetch
+        report = self.module._generate()
+        self.assertEqual(report["전체채널"], 1)
+        self.assertEqual(report["채널목록진단"]["모드"], "지정 M3U")
+        self.assertFalse(any("/ff_iproxy2/" in url for url in self.url_reads))
 
 
 if __name__ == "__main__":

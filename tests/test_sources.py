@@ -12,7 +12,7 @@ class SourceDefaultsTests(unittest.TestCase):
         self.calls = []
         def make_ff_url(path):
             self.calls.append(path)
-            return "https://ff.example.test" + path + "?apikey=RUNTIME_ONLY"
+            return "https://ff.example.test" + path + ("&" if "?" in path else "?") + "apikey=RUNTIME_ONLY"
         self.builder = make_ff_url
 
     def test_m3u_empty_uses_alive_default(self):
@@ -23,10 +23,19 @@ class SourceDefaultsTests(unittest.TestCase):
     def test_xmltv_empty_uses_priority_order(self):
         self.assertEqual(epg_settings(""), list(DEFAULT_EPGS))
         self.assertEqual(epg_settings(None), list(DEFAULT_EPGS))
+        self.assertEqual(epg_setting_display(""), "ff://myepg/api/epgall")
+
+    def test_legacy_auto_sources_drop_synology_404(self):
+        old = "ff://myepg/api/epgall\nff://epg/api/xml/alive"
+        self.assertEqual(epg_settings(old), ["ff://myepg/api/epgall"])
+        self.assertEqual(epg_setting_display(old), "ff://myepg/api/epgall")
+
+    def test_iproxy_uses_expected_media_type(self):
         self.assertEqual(
-            epg_setting_display(""),
-            "ff://myepg/api/epgall\nff://epg/api/xml/alive",
+            source_url("ff://ff_iproxy2/api/m3u", self.builder),
+            "https://ff.example.test/ff_iproxy2/api/m3u?type=mpegts&apikey=RUNTIME_ONLY"
         )
+        self.assertEqual(self.calls, ["/ff_iproxy2/api/m3u?type=mpegts"])
 
     def test_custom_user_values_preserved(self):
         custom_m3u = "https://custom.example.test/hybrid/api/m3u?key=abc"
@@ -47,9 +56,9 @@ class SourceDefaultsTests(unittest.TestCase):
         values = [source_url(src, self.builder) for src in epg_settings("")]
         self.assertEqual(
             self.calls,
-            ["/myepg/api/epgall", "/epg/api/xml/alive"],
+            ["/myepg/api/epgall"],
         )
-        self.assertEqual(len(values), 2)
+        self.assertEqual(len(values), 1)
         self.assertTrue(all("RUNTIME_ONLY" in value for value in values))
 
     def test_explicit_url_unmodified_and_no_ff_auth(self):

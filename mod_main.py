@@ -8,9 +8,10 @@ from pathlib import Path
 from flask import abort, jsonify, render_template, send_file
 from plugin import F, PluginModuleBase, ToolUtil
 from .service.core import build_epg, parse_m3u, parse_xmltv
+from .service.hybrid import merge_shyni_hybrid
 from .service.io import atomic_json, atomic_write, fetch_xml
 from .service.sources import (
-    DEFAULT_M3U, DEFAULT_EPGS, m3u_setting, epg_settings,
+    DEFAULT_M3U, DEFAULT_EPGS, IPROXY_M3U, m3u_setting, epg_settings,
     epg_setting_display, source_url,
 )
 from .setup import P
@@ -28,7 +29,8 @@ def _generate() -> dict:
     setting = P.ModelSetting
     # 비어 있는 기존 설정은 안전한 FF 내부 별칭으로 보완하되 DB 값은 덮어쓰지 않는다.
     # API 키와 서버 주소는 FF 실행 시점에만 해석하고 저장하지 않는다.
-    m3u_url = source_url(m3u_setting(setting.get("main_m3u_url")), ToolUtil.make_apikey_url)
+    m3u_choice = m3u_setting(setting.get("main_m3u_url"))
+    m3u_url = source_url(m3u_choice, ToolUtil.make_apikey_url)
     epg_urls = [source_url(item, ToolUtil.make_apikey_url)
                 for item in epg_settings(setting.get("main_epg_urls"))]
     try:
@@ -39,6 +41,18 @@ def _generate() -> dict:
         raise ValueError("채널별 별칭은 JSON 객체여야 합니다.")
 
     m3u = fetch_xml(m3u_url)
+    include_native = str(setting.get("main_hybrid_compatible") or "True").lower() in ("true", "1", "on", "yes")
+    channel_diag = {"모드": "지정 M3U", "IProxy추가채널": 0}
+    if m3u_choice == DEFAULT_M3U and include_native:
+        try:
+            native_url = source_url(IPROXY_M3U, ToolUtil.make_apikey_url)
+            native_data = fetch_xml(native_url)
+            m3u, channel_diag = merge_shyni_hybrid(m3u, native_data)
+        except Exception as exc:
+            # ff_iproxy2가 없어도 기존 ALive 목록으로 생성할 수 있게 유지한다.
+            channel_diag = {"모드": "ALive 폴백", "IProxy추가채널": 0,
+                            "IProxy실패유형": type(exc).__name__}
+            P.logger.warning("EPGCustom ff_iproxy2 채널 목록 조회 실패: %s", type(exc).__name__)
     channel_count = len(parse_m3u(m3u))
     if channel_count < 1:
         raise ValueError("M3U 응답에 채널이 없습니다. 채널 목록 주소를 확인하세요.")
@@ -67,15 +81,26 @@ def _generate() -> dict:
         raise RuntimeError("현재 유효한 편성표가 없어 직전 결과를 보존합니다.")
     report["수집실패"] = failures
     report["연결진단"] = {"M3U채널": channel_count, "XMLTV공급원": feed_checks}
-    report["채널목록기준"] = "설정된 M3U의 tvg-id (기본값은 FF ALive)"
+    report["채널목록기준"] = ("FF ALive + ff_iproxy2의 Shyni hybrid 호환 ID"
+                         if channel_diag["모드"] == "Shyni hybrid 호환"
+                         else "지정한 M3U의 채널 ID" if channel_diag["모드"] == "지정 M3U"
+                         else "FF ALive 단독 ID (ff_iproxy2 조회 실패)")
+    report["채널목록진단"] = channel_diag
     report["생성시각"] = datetime.now(_KST).isoformat(timespec="seconds")
     output = _output_directory()
     atomic_write(output / "epgall.xml", xml)
     atomic_json(output / "report.json", report)
     setting.set("main_last_run", report["생성시각"])
+    mode = report["채널목록진단"]["모드"]
+    if mode == "Shyni hybrid 호환":
+        mode_note = f" / hybrid 추가 {report['채널목록진단']['IProxy추가채널']}개"
+    elif mode == "ALive 폴백":
+        mode_note = " / 주의: ff_iproxy2 조회 실패, ALive 기준만 사용"
+    else:
+        mode_note = " / 사용자 지정 M3U"
     setting.set("main_last_summary",
         f"전체 {report['전체채널']} / 연결 {report['편성표연결']} / "
-        f"미연결 {report['편성표미연결']} / 항목 {report['편성항목']}")
+        f"미연결 {report['편성표미연결']} / 항목 {report['편성항목']}{mode_note}")
     return report
 
 
@@ -110,6 +135,7 @@ class ModuleMain(PluginModuleBase):
             "main_db_version": "1",
             "main_m3u_url": DEFAULT_M3U,
             "main_epg_urls": "\n".join(DEFAULT_EPGS),
+            "main_hybrid_compatible": "True",
             "main_aliases_json": '{"EBS 1": ["EBS1"]}',
             "main_auto_start": "False",
             "main_interval": "0 */6 * * *",
@@ -126,6 +152,7 @@ class ModuleMain(PluginModuleBase):
         # 기존 DB의 빈 설정에도 기본값을 보여준다. 저장된 사용자 지정 URL은 보존한다.
         arg["main_m3u_url"] = m3u_setting(arg.get("main_m3u_url"))
         arg["main_epg_urls"] = epg_setting_display(arg.get("main_epg_urls"))
+        arg["main_hybrid_compatible"] = arg.get("main_hybrid_compatible") or "True"
         arg["is_include"] = F.scheduler.is_include(self.get_scheduler_name())
         arg["is_running"] = F.scheduler.is_running(self.get_scheduler_name())
         arg["api_epgall"] = ToolUtil.make_apikey_url("/epgcustom/api/epgall")
