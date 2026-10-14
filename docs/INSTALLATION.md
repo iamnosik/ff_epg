@@ -122,3 +122,20 @@ grep '^version:' /data/plugins/ff_epg/info.yaml
 9. 검증 완료 후에만 자동 갱신을 활성화합니다.
 
 **자동 연결 시 주의할 사항:** FF가 제공하는 `ToolUtil.make_apikey_url`을 실행 시 사용하기 때문에 FF의 DDNS 및 API 키 설정이 정상이어야 합니다. NAS 내부에서 공개 DDNS에 접근할 수 없으면 연결 실패가 발생할 수 있습니다. 이 경우 우회 주소는 환경 확인 후 별도 설정합니다. 코드나 Git 저장소에 사용자 개인의 API 키를 넣지 않습니다.
+
+
+## 10. v0.2.0 FF 운영 검증 체크리스트
+
+1. 최신 Git을 받아 EPGCustom 버전이 0.2.0이고 `loading: true`인지 확인합니다.
+2. FF의 기존 MYEPG와 ALive가 정상적으로 작동하는지 확인합니다.
+3. EPGCustom 페이지에서 EPGALL 주소, 수동 생성, 마지막 성공 시각, 상태 보고서가 보이는지 확인합니다.
+4. 고급 설정의 기본 FF 별칭 3개와 기존 사용자가 지정한 주소를 확인합니다.
+5. 자동 스케줄을 OFF로 두고 **설정 저장 → 통합 EPG 지금 생성**을 실행합니다.
+6. 성공 후 EPGALL 응답이 XMLTV인지 확인하고 상태 보고서에 연결된 채널 수·편성 개수·수집 오류가 있는지 확인합니다.
+7. FF ALive 기본 M3U와 Oracle Shyni hybrid M3U는 채널 ID가 다를 수 있습니다. **Shyni 실제 채널과 ID 대조 후에만** Shyni EPG URL을 교체합니다.
+8. 문제 시 Shyni EPG를 기존 `/myepg/api/epgall`로 유지/복구하고 EPGCustom 스케줄을 OFF로 둡니다. 다른 제작자 플러그인 수정이나 DB 삭제는 필요하지 않습니다.
+
+### DB·디스크
+- EPGCustom의 상태/설정 DB는 독립된 FF SQLite 바인드를 이용합니다.
+- 생성되는 `epgall.xml`과 `report.json`은 FF의 영속 데이터 폴더 `epgcustom` 안에 저장됩니다.
+- 정상 생성 시 산출물은 덮어써지며, 실패 시 마지막 정상 파일을 보존합니다.
