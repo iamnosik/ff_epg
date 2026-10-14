@@ -2,7 +2,9 @@
 
 **저장소:** https://github.com/iamnosik/ff_epg
 **패키지명:** epgcustom
-**버전:** 0.2.0 (FF/MyEPG/ALive용 통합 EPG 안정화 및 화면 개선, Synology 운영 검증 전)
+**버전:** 0.2.1 (Shyni hybrid 232개 채널 ID 일치 검증 및 FF EPG 404 공급원 정리, Synology 운영 적용 전)
+
+**현재 권장 기본 구성:** FF ALive + `ff_iproxy2`의 Shyni hybrid 채널 목록 / MyEPG XMLTV 1순위 공급원. 이전 버전의 FF EPG 404 주소는 자동 기본값에서 제외했습니다. 다른 직접 설정한 공급원은 보존합니다.
 **언어:** Python 3.10 및 FlaskFarm(FF) 플러그인
 
 ## 개발 목적
@@ -128,7 +130,7 @@ v0.1.1에서 `epgcustom` DB 엔진 누락을 안전하게 보완했고, v0.1.2�
 
 **FF 내 실제 설치 경로는 `/data/plugins/ff_epg`일 수 있습니다.** 버전 확인 시에는 저장소 이름을 기준으로 폴더를 확인하고, 웹 주소에서는 `/epgcustom/...`을 사용합니다.
 
-## v0.1.3 — 기본 EPG 공급원 자동 설정
+## v0.1.3 — 기본 EPG 공급원 자동 설정 (이전 버전 기록)
 
 처음 FF의 **미분류 → EPGCustom → 통합 EPG 설정** 화면을 열면 비어 있는 필드는 다음과 같이 자동으로 채워 보입니다.
 
@@ -167,7 +169,7 @@ v0.1.1에서 `epgcustom` DB 엔진 누락을 안전하게 보완했고, v0.1.2�
 ### 설정 화면
 - MyEPG처럼 최종 `EPGALL` 주소와 생성·오류 상태, 마지막 생성 시각, 연결률 보고서를 맨 위에 표시합니다.
 - M3U/XMLTV 공급원과 이름 별칭 설정은 고급 설정을 펼쳐서 수정합니다.
-- 기본 EPG 공급원은 MyEPG 우선, FF EPG 보조입니다. 기존 사용자 설정과 스케줄러 상태는 바꾸지 않습니다.
+- 기본 EPG 공급원은 MyEPG입니다(v0.2.1부터). 기존 사용자 설정과 스케줄러 상태는 바꾸지 않습니다.
 
 ### 편성표 정확도
 - XMLTV `YYYYMMDDHHMMSS ±HHMM` 시간의 초와 시간대를 온전히 분석합니다. 기존 버전에서 14자리 시간을 12자리로 잘라 읽을 수 있던 문제를 수정합니다.
@@ -187,3 +189,44 @@ v0.1.1에서 `epgcustom` DB 엔진 누락을 안전하게 보완했고, v0.1.2�
 - Oracle2 Python 단위 테스트에서 XMLTV 초·시간대·오염된 입력·공급원 커버리지·MBC 구별을 추가 검사합니다.
 - GitHub 업로드 후 Synology FF가 자동 갱신되는 환경이라면 운영 시간대에 FF를 재시작해 `0.2.0`과 `loading: true`를 확인하세요.
 - **이 검증 전에는 Shyni의 기존 EPG URL을 변경하지 마세요.**
+
+
+## v0.2.1 — Shyni hybrid 채널 232개 정확히 매칭
+
+2026-10-14 현재 Synology FF와 Oracle Shyni를 읽기 전용으로 대조해 다음을 확인했습니다.
+
+| 항목 | 확인된 결과 |
+|---|---:|
+| FF ALive M3U 실제 항목 / 고유 채널 ID | 229 / 218 |
+| FF ff_iproxy2 M3U 실제 항목 | 35 |
+| Shyni hybrid M3U 항목 / 고유 채널 ID | 243 / 232 |
+| ALive에서 제외하는 KBS 1TV·KBS 2TV 중복 표시 항목 | 2 |
+| iproxy2에서 추가되는 채널 | 16 |
+| **EPGCustom 새 채널 ID와 Shyni hybrid 채널 ID 차이** | **0개** |
+
+### 변경된 기본 공급원
+
+- 채널 목록: `ff://alive/api/m3u` + `ff://ff_iproxy2/api/m3u` (Shyni hybrid 호환 기본 ON)
+- XMLTV: `ff://myepg/api/epgall` 한 곳만 기본 사용
+- Synology FF의 `/epg/api/xml/alive`는 **HTTP 404로 확인되어 기본 공급원에서 제외**
+- v0.2.0에서 자동 저장된 정확히 동일한 MyEPG+FF EPG 두 줄은 새로운 MyEPG 단일 기본값으로 해석합니다. 다른 직접 지정 URL은 변경하지 않습니다.
+- ff_iproxy2의 M3U 조회가 실패하면 ALive 채널만 사용하고 `ALive 폴백` 경고를 보고서·최근 생성 상태에 남깁니다.
+- 기본 ALive 목록이 아닌 사용자 M3U URL을 지정했다면 자동 합치기를 적용하지 않습니다.
+- 원본 ALive·ff_iproxy2 M3U 안의 재생 주소는 **출력 XMLTV에는 기록되지 않으며**, 편성 채널 식별에만 사용합니다.
+
+### EPG 공급원 한계와 추가 개발
+
+실제 MyEPG XMLTV를 사용한 독립 시험에서는 Shyni와 동일한 **232개 ID 중 49개 채널 연결, 183개 미연결, 총 1,959개 편성 항목**이었습니다. MBC 본채널·EBS2·JTBC·YTN은 데이터가 부족했고 EBS1·KBS1·KBS2는 연결됐습니다.
+
+이는 코드에서 제공자별 편성표를 만들어 채운 결과가 아니라 MyEPG가 제공한 현재 XMLTV와 명시적인 채널 ID 매칭 결과입니다. **MBC 등 편성표 누락은 MyEPG 추가 공급원 활성화 또는 별도의 최신 XMLTV 확보가 필요**합니다. 다른 방송의 EPG를 비슷한 이름으로 잘못 대입하지 않습니다.
+
+### FF 업데이트 후 확인할 사항
+
+1. 플러그인 목록에서 `version: 0.2.1`, `loading: true` 확인
+2. EPGCustom 화면에 **Shyni hybrid 채널 구성 호환** ON 확인
+3. 기존 FF/MyEPG/Shyni의 EPG URL은 그대로 두고 수동 EPG 생성
+4. 생성 보고서에서 `채널목록진단.모드: Shyni hybrid 호환`, `최종채널ID: 232`, `IProxy추가채널: 16` 확인
+5. 보고서에 `ALive 폴백`이면 해당 원인을 먼저 해결하고 Shyni 설정을 교체하지 않음
+6. XMLTV 232개 채널 `id`와 EPG 연결 개수를 확인한 후에만 Shyni EPG URL 변경을 검토
+
+**테스트 결과:** Python 자동 시험 43개 통과, 실제 Synology/Oracle의 M3U로 232개 채널 ID 집합의 완전 일치를 별도 검증했습니다. 단, Synology FF에 새 버전 설치·재시작은 아직 실행하지 않았습니다.

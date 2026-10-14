@@ -64,3 +64,15 @@ M3U 응답의 채널 수가 0이면 생성 전 중지하고, 공급원 XMLTV의 
 이 구조는 FF 내부 공개 URL에 네트워크로 접근하므로 NAS 자체에서 해당 DDNS/역방향 프록시 주소를 접근할 수 있어야 합니다. FF의 DDNS 값이 설정되지 않았거나 NAS 내부에서 접속이 차단된 경우 주소 자동 변환만으로 수집이 성공하지는 않습니다.
 
 기본 `/alive/api/m3u`는 ALive에서 선택한 채널 목록이며, `/alive/api/m3uall`과 다릅니다. Shyni hybrid M3U는 별도로 존재하므로 최종 Shyni 적용 전에 `tvg-id`의 동일성을 검사해야 합니다.
+
+
+## v0.2.1 — FF ALive + ff_iproxy2 구성으로 Shyni hybrid ID 재현
+
+- ALive M3U에서 `KBS 1TV`, `KBS 2TV`라는 *표시 이름*의 중복 채널만 제거합니다.
+- ff_iproxy2 M3U(`type=mpegts`)에 있는 채널 중 ALive에 동일 표시명이 없는 것만 추가합니다.
+- 추가 채널은 Shyni hybrid와 동일하게 `tvg-name`을 ID로 사용합니다.
+- 원본 229개 Alive 항목(고유 ID 218개) + iproxy2 전용 16개 - KBS 중복 2개 = Shyni와 동일한 **232개 고유 채널 ID**를 독립 검증했습니다.
+- FF iproxy2가 불안정하거나 없으면 ALive M3U만 사용하여 생성하고, 진단에서 폴백을 표시합니다.
+- 재생 주소 자체는 EPG 생성용 M3U에서만 처리하고 산출 XMLTV에 보관하지 않습니다.
+- 기본 XMLTV 소스는 MyEPG 한 곳입니다. FF EPG 플러그인의 API는 404로 확인되어 기본 사용하지 않습니다.
+- 후속 EPG 커버리지는 MyEPG에 실제 존재하는 최신 편성표 데이터와 추가적으로 검증한 XMLTV 소스에 의해 결정됩니다.

@@ -139,3 +139,17 @@ grep '^version:' /data/plugins/ff_epg/info.yaml
 - EPGCustom의 상태/설정 DB는 독립된 FF SQLite 바인드를 이용합니다.
 - 생성되는 `epgall.xml`과 `report.json`은 FF의 영속 데이터 폴더 `epgcustom` 안에 저장됩니다.
 - 정상 생성 시 산출물은 덮어써지며, 실패 시 마지막 정상 파일을 보존합니다.
+
+
+## 11. v0.2.1 — Shyni hybrid 채널 호환 및 FF EPG 404 처리
+
+- FF 재시작 후 EPGCustom 0.2.1의 `loading: true` 확인
+- 고급 설정의 채널 M3U는 기존 `ff://alive/api/m3u`, 기본 EPG는 `ff://myepg/api/epgall`
+- **Shyni hybrid 채널 구성 호환**은 기본 ON. FF iproxy2 M3U가 정상이라면 Alive와 결합해 Shyni hybrid의 채널 ID를 재현
+- FF iproxy2 M3U가 실패하면 Alive 단독으로 생성하며 `ALive 폴백`을 표시. 이 경우 Shyni에 새 EPG 주소를 적용하기 전에 먼저 원인을 점검
+- 기존 FF EPG의 `/epg/api/xml/alive`는 현재 Synology에서 HTTP 404이므로 기본값에서 제외
+- 이전 버전에서 자동으로 들어간 MyEPG+FF EPG 기본 두 줄은 새 버전에서 MyEPG 한 줄로 표시. 임의로 입력한 타 공급원의 주소는 보존
+- EPGCustom의 수동 생성 버튼으로 시험 후 `/epgcustom/api/status`에서 `최종채널ID=232` 및 `IProxy추가채널=16` 등을 확인
+- 생성된 `/epgcustom/api/epgall`의 XMLTV 유효성 및 방송 ID를 확인하고 기존 Shyni MyEPG 주소를 변경할지 최종 결정
+
+**원복:** 기존 Shyni의 MyEPG 주소를 유지하면 새 플러그인 생성 결과와 무관하게 기존 EPG를 계속 이용합니다. FF 장애 시 EPGCustom 스케줄러를 OFF로 두고 새 플러그인만 이전 버전으로 복원할 수 있습니다.

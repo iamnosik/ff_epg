@@ -1,5 +1,28 @@
 # EPGCustom 변경 이력
 
+## [0.2.1] - 2026-10-14
+
+### Shyni hybrid 채널 ID 호환 및 소스 404 해결
+- ALive M3U와 ff_iproxy2 M3U의 채널 메타데이터를 결합해 Shyni hybrid와 같은 ID 목록 생성
+- Shyni 규칙에 맞춰 KBS 1TV·KBS 2TV 중복 표시 항목 2개 제외, ff_iproxy2 전용 채널 16개 추가
+- ff_iproxy2 실패 시 ALive 단독 목록으로 안전한 폴백, 마지막 생성 요약/진단에 폴백 경고 기록
+- 기본값은 MyEPG 한 곳으로 단순화. Synology에서 404 반환한 /epg/api/xml/alive는 기본 제공자에서 제외
+- 과거 자동 생성 기본 주소 2개는 새 기본값으로 자동 해석, 사용자 지정 XMLTV 주소는 보존
+- 설정 화면에 Shyni hybrid 채널 구성 호환 ON/OFF 스위치 추가, FF iproxy2가 없으면 재생 시스템 영향 없이 폴백
+
+### 실제 데이터 읽기 전용 검증
+- FF ALive M3U 229항목(218고유 ID), ff_iproxy2 M3U 35항목, Shyni hybrid 243항목(232고유 ID)
+- EPGCustom 조합 결과 232 고유 ID가 Shyni hybrid와 완전히 일치(누락/추가 0개)
+- MyEPG 실제 XMLTV를 이용한 독립 시험: 232채널 중 49채널 연결, 편성항목 1959개
+- MBC 본채널·EBS2·JTBC·YTN은 제공자 원본에 최신 EPG가 부족한 상태로 확인
+- Python 회귀 테스트 **43개 통과**, Python 구문 검증 및 Git 공백 검사 통과
+- Synology FF 최신 버전 로딩 및 운영 EPG 생성은 아직 새 버전으로 확인하지 않음
+
+### 운영 영향
+- 기존 Synology FF/MyEPG/ALive/Shyni 설정과 DB를 수정하지 않음
+- GitHub로 EPGCustom 개발본만 업로드하고, FF 재시작은 사용자가 선택
+- EPG XMLTV가 올바르게 생성된 후 Shyni EPG URL 변경 여부 결정
+
 ## [0.2.0] - 2026-10-14
 
 ### 전면 검증 및 정확도 향상
