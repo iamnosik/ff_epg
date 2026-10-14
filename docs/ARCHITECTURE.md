@@ -45,3 +45,22 @@ MyEPG XMLTV ──────┘   │
 MBC 본채널과 EBS2는 당시 MyEPG XMLTV에 최신 프로그램이 없었고, EBS1은 편성표가 있으나 EBS 1과 이름이 달랐습니다.
 
 v0.1.0은 **데이터 연결 엔진**입니다. 실제 232개 채널의 편성표를 생성한다는 의미는 아닙니다.
+
+## v0.1.3 기본 공급원 및 인증 구조
+
+설정 DB·Git 저장소에 실제 API 키를 넣지 않도록 FF 내부 별칭을 사용합니다.
+
+```text
+FF EPGCustom 설정
+ ├─ ff://alive/api/m3u       → 실행 시 ToolUtil.make_apikey_url('/alive/api/m3u')
+ ├─ ff://myepg/api/epgall    → 실행 시 ToolUtil.make_apikey_url('/myepg/api/epgall')
+ └─ ff://epg/api/xml/alive   → 실행 시 ToolUtil.make_apikey_url('/epg/api/xml/alive')
+```
+
+서버 주소와 인증 키는 실행 시 FF가 가진 설정을 참조하여 실제 HTTPS URL에 결합합니다. 저장된 `ff://` 주소 자체에는 비밀값이 없습니다. 사용자가 직접 지정한 HTTP(S) URL은 수정하지 않습니다.
+
+M3U 응답의 채널 수가 0이면 생성 전 중지하고, 공급원 XMLTV의 파싱 오류 또는 0개 편성인 경우 해당 공급원만 제외합니다. 한 공급원이라도 정상 데이터가 있으면 결과를 생성하고, 보고서의 `연결진단`에 검사된 채널/프로그램 수를 기록합니다. 전체 생성에 실패하면 직전 XMLTV 파일을 유지합니다.
+
+이 구조는 FF 내부 공개 URL에 네트워크로 접근하므로 NAS 자체에서 해당 DDNS/역방향 프록시 주소를 접근할 수 있어야 합니다. FF의 DDNS 값이 설정되지 않았거나 NAS 내부에서 접속이 차단된 경우 주소 자동 변환만으로 수집이 성공하지는 않습니다.
+
+기본 `/alive/api/m3u`는 ALive에서 선택한 채널 목록이며, `/alive/api/m3uall`과 다릅니다. Shyni hybrid M3U는 별도로 존재하므로 최종 Shyni 적용 전에 `tvg-id`의 동일성을 검사해야 합니다.
