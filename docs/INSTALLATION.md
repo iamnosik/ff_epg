@@ -1,0 +1,54 @@
+# EPGCustom 설치 및 운영 검증 가이드
+
+**현재 상태: GitHub 개발본. Synology 운영 FF에 미설치.** 운영 수정은 사용자가 검토한 다음 별도 진행합니다.
+
+## 1. 사전 확인
+
+- FF의 사용자 정의 플러그인 폴더 위치와 영속 볼륨 매핑 확인
+- FF 컨테이너의 Python·FlaskFarm API 버전 확인
+- 기존 epg 및 myepg Git 저장소와 설정 백업
+- 기존 Shyni Live TV M3U와 EPG 주소 백업
+- 테스트 기간 동안 기존 자동 수집 작업을 중지하거나 수정할 필요는 없습니다.
+
+**주의:** Oracle2 작업 폴더 /docker/projects/ff_epg는 개발용입니다. Synology FF 플러그인 폴더가 아닙니다.
+
+## 2. 테스트 환경에 배포
+
+1. FF 컨테이너의 실제 플러그인 경로를 확인합니다.
+2. 해당 경로에 새 패키지 디렉터리 epgcustom을 만듭니다.
+3. iamnosik/ff_epg 저장소 코드를 epgcustom 디렉터리로 복제합니다.
+4. FF의 사용자 플러그인 등록 방식에 따라 플러그인을 활성화합니다.
+5. FF 시작 로그에서 EPGCustom 로딩 오류가 없는지 확인합니다.
+6. 기존 EPG/MyEPG 메뉴와 API가 그대로 작동하는지 확인합니다.
+
+FF의 실제 플러그인 등록·관리 방식과 재시작 필요 여부는 **Synology 환경 확인 후 결정**합니다. 검증 없이 운영 FF를 재시작하지 않습니다.
+
+## 3. 설정 값
+
+- M3U: 현재 Shyni Live TV가 사용하는 채널 목록과 동일한 채널 ID를 가진 주소
+- EPG XMLTV: 기존 FF EPG 및 MyEPG API (한 줄당 하나)
+- 별칭 JSON: {"EBS 1": ["EBS1"]}
+- 자동 갱신: 최초에는 끔, 테스트 후 활성화
+
+URL에 들어간 API 키를 GitHub에 커밋하지 마세요.
+
+## 4. 검증
+
+- 설정 화면 렌더링 및 'EPG 생성' 명령 동작
+- EBS 1이 원본 EBS1 편성표와 매칭되는지 검사
+- MBC 본채널이 MBC 뉴스와 잘못 매칭되지 않는지 검사
+- 일부 공급원 실패에도 나머지 공급원을 이용하는지 검사
+- XMLTV의 채널 id가 M3U tvg-id와 일치하는지 검사
+- Shyni가 XMLTV를 읽을 때 채널과 편성표가 정상 연결되는지 검사
+- API 인증, FF 재시작, 자동 갱신 및 로그 상태 검사
+
+## 5. 운영 적용
+
+위 검증 후에만 Shyni EPG URL을 EPGCustom의 /epgcustom/api/epgall 주소로 변경합니다. M3U 재생 주소와 기존 Live Proxy 설정은 건드리지 않습니다.
+
+## 6. 원복
+
+- Shyni 설정의 EPG 주소를 기존 /myepg/api/epgall 주소로 복원합니다.
+- EPGCustom 자동 실행을 해제합니다.
+- 필요하면 플러그인을 비활성화하되, 최초에는 파일과 설정을 보존합니다.
+- 기존 epg/myepg/Shyni/ALive의 원본 파일이나 DB는 EPGCustom이 수정하지 않습니다.
