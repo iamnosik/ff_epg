@@ -13,6 +13,35 @@ from pathlib import Path
 MAX_REPORT_BYTES = 8 * 1024 * 1024
 
 
+def summarize_groups(entries: list[dict]) -> list[dict]:
+    """M3U 그룹별 연결 현황. 원본 그룹명은 보존하고 비어 있으면 그룹 없음으로 집계.
+
+    채널 수는 M3U의 고유 채널 ID 기준이며, 같은 원본 EPG 공유도 별도
+    채널이므로 각각 계산한다. 미연결 수가 많은 그룹부터 표시한다.
+    """
+    grouped = {}
+    for row in entries:
+        if not isinstance(row, dict):
+            continue
+        group = str(row.get("그룹") or "").strip() or "그룹 없음"
+        summary = grouped.setdefault(group, {
+            "그룹": group, "전체": 0, "연결": 0, "미연결": 0,
+            "연결률": 0.0, "미연결사유별": {},
+        })
+        summary["전체"] += 1
+        if row.get("연결"):
+            summary["연결"] += 1
+        else:
+            summary["미연결"] += 1
+            reason = str(row.get("미연결사유") or "미확인")
+            summary["미연결사유별"][reason] = summary["미연결사유별"].get(reason, 0) + 1
+    for summary in grouped.values():
+        if summary["전체"]:
+            summary["연결률"] = round(100 * summary["연결"] / summary["전체"], 1)
+        summary["미연결사유별"] = dict(sorted(summary["미연결사유별"].items()))
+    return sorted(grouped.values(), key=lambda group: (-group["미연결"], -group["전체"], group["그룹"]))
+
+
 def summarize_diagnostics(report: dict) -> dict:
     """신규 진단 필드만 추가하며 기존 0.3.x JSON 구조를 그대로 보존한다."""
     entries = report.get("채널별상태") or []
@@ -48,6 +77,7 @@ def summarize_diagnostics(report: dict) -> dict:
         })
 
     report["중복매핑"] = shared
+    report["그룹별요약"] = summarize_groups(entries)
     report["진단요약"] = {
         "연결": sum(bool(row.get("연결")) for row in entries),
         "미연결": sum(not row.get("연결") for row in entries),
@@ -103,6 +133,7 @@ def prepare_diagnostics_view(report: dict | None) -> dict:
             "ID": str(raw.get("ID") or ""),
             "이름": str(raw.get("이름") or ""),
             "그룹": str(raw.get("그룹") or ""),
+            "그룹표시": str(raw.get("그룹") or "").strip() or "그룹 없음",
             "연결": connected,
             "공급원": provider,
             "편성항목": raw.get("편성항목") if isinstance(raw.get("편성항목"), int) else 0,
@@ -114,6 +145,9 @@ def prepare_diagnostics_view(report: dict | None) -> dict:
         }
         rows.append(row)
 
+    # 구버전(v0.4.x) JSON은 그룹별요약이 없으므로 화면에서 즉시 계산한다.
+    # 저장된 그룹별요약을 무조건 신뢰하지 않아 오래된/손상된 값을 표시하지 않는다.
+    group_summary = summarize_groups(rows)
     groups = report.get("중복매핑", [])
     groups = groups if isinstance(groups, list) else []
     summary = report.get("진단요약") if has_details else {}
@@ -124,6 +158,9 @@ def prepare_diagnostics_view(report: dict | None) -> dict:
         "limited": len(raw_rows) > len(rows),
         "providers": sorted(providers),
         "reasons": sorted(reasons),
+        "groups": sorted((group["그룹"] for group in group_summary)),
+        "group_summary": group_summary,
+        "top_missing_groups": [group for group in group_summary if group["미연결"]][:5],
         "shared": groups,
         "summary": summary,
         "detailed": has_details,

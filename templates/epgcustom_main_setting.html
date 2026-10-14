@@ -40,7 +40,7 @@
       <summary style="cursor:pointer;font-weight:bold;margin-bottom:12px;">고급 설정 — M3U·XMLTV 공급원과 채널 이름 별칭</summary>
       {{ macros.setting_input_text('main_m3u_url', '기준 채널 목록(M3U)', value=arg['main_m3u_url'], desc=['기본: ff://alive/api/m3u — FF ALive 채널 ID 기준', 'Oracle Shyni hybrid M3U와 실제 ID가 다를 수 있습니다. Shyni 적용 전에 채널 목록을 대조하세요.']) }}
       {{ macros.setting_input_textarea('main_epg_urls', 'EPG XMLTV 공급원', value=arg['main_epg_urls'], desc=['기본 URL은 MyEPG 한 곳이며 위 KR1 옵션 ON일 때 검증된 KR1 공급원을 자동 보완합니다.', '사용자 지정 공급원 주소가 있으면 KR1을 강제로 추가하지 않습니다. 기존 FF EPG 404 주소는 제외됩니다.', 'FF 내부 ff:// 주소에는 실제 API 키를 넣지 않습니다.']) }}
-      {{ macros.setting_input_textarea('main_aliases_json', '채널 별칭(JSON)', value=arg['main_aliases_json'], desc=['기본 검증 별칭: EBS 1 ↔ EBS1, TV CHOSUN ↔ TV조선, ANIMAX ↔ 애니맥스', '동일한 채널명을 별도로 지정하면 사용자 JSON을 우선합니다. 다른 방송을 유사한 이름만으로 연결하지 않습니다.']) }}
+      {{ macros.setting_input_textarea('main_aliases_json', '채널 별칭(JSON)', value=arg['main_aliases_json'], desc=['기본 검증 별칭: EBS 1, TV CHOSUN, ANIMAX 및 SK스토아·공영홈쇼핑·CJ ONSTYLE·현대홈쇼핑+샵의 검증된 표기 차이', '동일한 채널명을 별도로 지정하면 사용자 JSON을 우선합니다. 다른 방송을 유사한 이름만으로 연결하지 않습니다.']) }}
     </details>
   </form>
   <p style="font-size:.85em;opacity:.7">기존 EPG/MyEPG/ALive는 수정하지 않습니다. 편성 데이터가 없는 방송의 편성표를 임의로 만들어 표시하지 않습니다.</p>

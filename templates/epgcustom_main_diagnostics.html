@@ -4,7 +4,7 @@
   <div class="d-flex justify-content-between align-items-center flex-wrap my-3">
     <h4>EPGCustom · 채널별 진단</h4>
     <div>
-      <a class="btn btn-outline-secondary btn-sm" href="/epgcustom/main/setting">통합 EPG 설정</a>
+      <a class="btn btn-outline-light btn-sm" href="/epgcustom/main/setting">통합 EPG 설정</a>
       <a class="btn btn-outline-info btn-sm" href="/epgcustom/main/diagnostics">진단 결과 새로고침</a>
     </div>
   </div>
@@ -47,9 +47,39 @@
   </div>
 
   <div class="card mb-3" style="padding:16px;background:#252525;color:#eee">
+    <h5>그룹별 EPG 연결 현황</h5>
+    <p style="font-size:.85em;opacity:.85">미연결 채널이 많은 그룹부터 표시합니다. 그룹을 선택하면 해당 그룹의 미연결 채널만 조회합니다.</p>
+    <div class="d-flex flex-wrap mb-2" style="gap:8px">
+      {% for group in arg['top_missing_groups'] %}
+      <button type="button" class="btn btn-outline-light btn-sm epg-diag-group-focus"
+              data-group-name="{{ group['그룹'] }}">
+        {{ group['그룹'] }} · 미연결 {{ group['미연결'] }} / {{ group['전체'] }}
+      </button>
+      {% endfor %}
+    </div>
+    <details>
+      <summary style="cursor:pointer">전체 {{ arg['group_summary'] | length }}개 그룹 현황 보기</summary>
+      <div class="table-responsive mt-2" style="max-height:330px;overflow:auto">
+        <table class="table table-sm table-striped table-bordered">
+          <thead><tr><th>그룹</th><th>전체</th><th>연결</th><th>미연결</th><th>연결률</th><th>바로 보기</th></tr></thead>
+          <tbody>
+          {% for group in arg['group_summary'] %}
+          <tr>
+            <td>{{ group['그룹'] }}</td><td>{{ group['전체'] }}</td><td>{{ group['연결'] }}</td>
+            <td>{{ group['미연결'] }}</td><td>{{ group['연결률'] }}%</td>
+            <td><button type="button" class="btn btn-outline-info btn-sm epg-diag-group-focus" data-group-name="{{ group['그룹'] }}">미연결 보기</button></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+
+  <div class="card mb-3" style="padding:16px;background:#252525;color:#eee">
     <h5>채널 검색 및 필터</h5>
     <div class="row">
-      <div class="col-md-4 mb-2">
+      <div class="col-md-3 mb-2">
         <label for="epg-diag-search">채널명·ID·원본 ID 검색</label>
         <input id="epg-diag-search" class="form-control" type="search" placeholder="예: MBC, SPOTV Prime, EBS2" autocomplete="off">
       </div>
@@ -62,7 +92,7 @@
           <option value="shared">원본 공유 검토</option>
         </select>
       </div>
-      <div class="col-md-3 mb-2">
+      <div class="col-md-2 mb-2">
         <label for="epg-diag-provider">공급원</label>
         <select id="epg-diag-provider" class="form-control">
           <option value="">전체 공급원</option>
@@ -72,6 +102,15 @@
         </select>
       </div>
       <div class="col-md-3 mb-2">
+        <label for="epg-diag-group">채널 그룹</label>
+        <select id="epg-diag-group" class="form-control">
+          <option value="">전체 그룹</option>
+          {% for group in arg["groups"] %}
+            <option value="{{ group }}">{{ group }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2 mb-2">
         <label for="epg-diag-reason">미연결 사유</label>
         <select id="epg-diag-reason" class="form-control">
           <option value="">전체 사유</option>
@@ -110,6 +149,7 @@
         <tr class="epg-diag-row"
             data-connected="{{ 'yes' if channel['연결'] else 'no' }}"
             data-provider="{{ channel['공급원'] }}"
+            data-group="{{ channel['그룹표시'] }}"
             data-reason="{{ channel['미연결사유'] }}"
             data-shared="{{ 'yes' if channel['매핑공유'] else 'no' }}">
           <td><strong>{{ channel['이름'] }}</strong><div><small class="text-muted">{{ channel['ID'] }}</small></div></td>
@@ -165,6 +205,7 @@
     var query = ($("#epg-diag-search").val() || "").toLocaleLowerCase().trim();
     var state = $("#epg-diag-state").val();
     var provider = $("#epg-diag-provider").val();
+    var group = $("#epg-diag-group").val();
     var reason = $("#epg-diag-reason").val();
     var shown = 0;
     $("#epg-diag-table tbody tr.epg-diag-row").each(function () {
@@ -175,6 +216,7 @@
         && (state === "all" || (state === "connected" && connected)
             || (state === "missing" && !connected) || (state === "shared" && shared))
         && (!provider || $row.attr("data-provider") === provider)
+        && (!group || $row.attr("data-group") === group)
         && (!reason || $row.attr("data-reason") === reason);
       $row.toggle(valid);
       if (valid) { shown++; }
@@ -183,11 +225,20 @@
   }
   $(function () {
     $("#epg-diag-search").on("input", applyFilters);
-    $("#epg-diag-state, #epg-diag-provider, #epg-diag-reason").on("change", applyFilters);
+    $("#epg-diag-state, #epg-diag-provider, #epg-diag-group, #epg-diag-reason").on("change", applyFilters);
+    $(".epg-diag-group-focus").on("click", function () {
+      $("#epg-diag-search").val("");
+      $("#epg-diag-state").val("missing");
+      $("#epg-diag-provider, #epg-diag-reason").val("");
+      $("#epg-diag-group").val($(this).attr("data-group-name"));
+      applyFilters();
+      var table = document.getElementById("epg-diag-table");
+      if (table) { table.scrollIntoView({behavior: "smooth", block: "start"}); }
+    });
     $("#epg-diag-reset").on("click", function () {
       $("#epg-diag-search").val("");
       $("#epg-diag-state").val("all");
-      $("#epg-diag-provider, #epg-diag-reason").val("");
+      $("#epg-diag-provider, #epg-diag-group, #epg-diag-reason").val("");
       applyFilters();
     });
     applyFilters();

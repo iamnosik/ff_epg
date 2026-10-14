@@ -389,6 +389,60 @@ class RuntimeFlowTests(unittest.TestCase):
         self.assertTrue(reply["보고서오류"])
 
 
+    def test_v05_verified_shopping_aliases_only_and_user_override(self):
+        from service.sources import KR1_EPG_URL
+        names = [
+            "SK스토아", "공영홈쇼핑", "CJ ONSTYLE", "현대홈쇼핑+샵",
+            "CJ ONSTYLE PLUS", "EBS2",
+        ]
+        m3u = (M3U + "".join(
+            f'#EXTINF:-1 tvg-id="{name}" group-title="홈쇼핑",{name}\n'
+            f'https://example.invalid/stream\n' for name in names
+        )).encode()
+        kr1_names = [
+            ("SK.stoa.kr", "SK stoa"), ("공영쇼핑.kr", "공영쇼핑"),
+            ("CJ.온스타일.kr", "CJ 온스타일"),
+            ("현대홈쇼핑+Shop.kr", "현대홈쇼핑+Shop"),
+            ("EBS플러스2.kr", "EBS플러스2"),
+        ]
+        kr1 = "<tv>" + "".join(
+            f'<channel id="{cid}"><display-name>{display}</display-name></channel>'
+            f'<programme channel="{cid}" start="20261014090000 +0900" '
+            f'stop="20261014110000 +0900"><title>{display} broadcast</title></programme>'
+            for cid,display in kr1_names
+        ) + "</tv>"
+
+        def mock_fetch(url):
+            if "/alive/api/m3u" in url:
+                return m3u
+            if "/myepg/api/epgall" in url:
+                return XMLTV
+            if url == KR1_EPG_URL:
+                return kr1.encode()
+            raise AssertionError("unexpected source")
+
+        DummySetting.values.update({
+            "main_kr1_enabled": "True",
+            "main_hybrid_compatible": "False",
+        })
+        self.module.fetch_xml = mock_fetch
+        report = self.module._generate()
+        self.assertEqual(report["전체채널"], 7)
+        self.assertEqual(report["편성표연결"], 5)
+        linked = {row["ID"]: row for row in report["채널별상태"] if row["연결"]}
+        self.assertEqual(linked["SK스토아"]["원본채널ID"], "SK.stoa.kr")
+        self.assertEqual(linked["공영홈쇼핑"]["원본채널ID"], "공영쇼핑.kr")
+        self.assertEqual(linked["CJ ONSTYLE"]["원본채널ID"], "CJ.온스타일.kr")
+        self.assertEqual(linked["현대홈쇼핑+샵"]["원본채널ID"], "현대홈쇼핑+Shop.kr")
+        self.assertNotIn("EBS2", linked)
+        self.assertNotIn("CJ ONSTYLE PLUS", linked)
+        self.assertEqual(linked["SK스토아"]["매칭방식"], "별칭정확")
+
+        DummySetting.values["main_aliases_json"] = '{"SK스토아": []}'
+        report2 = self.module._generate()
+        self.assertEqual(report2["편성표연결"], 4)
+        self.assertIn("SK스토아", {row["ID"] for row in report2["미연결채널"]})
+
 
 if __name__ == "__main__":
     unittest.main()

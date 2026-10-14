@@ -23,6 +23,13 @@ _VERIFIED_ALIASES = {
     "EBS 1": ["EBS1"],
     "TV CHOSUN": ["TV조선"],
     "ANIMAX": ["애니맥스"],
+    # v0.5.0: 실제 KR1 XMLTV에서 독립적으로 유효 방송 일정을 확인한
+    # 동일 채널/브랜드의 한영·띄어쓰기 표기 차이만 추가한다.
+    "SK스토아": ["SK stoa"],
+    "공영홈쇼핑": ["공영쇼핑"],
+    "CJ ONSTYLE": ["CJ 온스타일"],
+    "현대홈쇼핑+샵": ["현대홈쇼핑+Shop"],
+    # EBS2와 EBS플러스2, CJ ONSTYLE과 CJ ONSTYLE PLUS는 서로 다른 채널이다.
 }
 
 
